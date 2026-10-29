@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import os
 import re
+import requests
 from zoneinfo import ZoneInfo
 
 # --- Page Configuration ---
@@ -21,19 +22,16 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
     }
 
-    /* Ambient Background */
     .stApp {
         background: radial-gradient(circle at 50% 0%, #0d172a 0%, #050a14 60%, #020408 100%) !important;
         color: #f1f5f9 !important;
     }
 
-    /* Sidebar Styling */
     section[data-testid="stSidebar"] {
         background-color: #070d1a !important;
         border-right: 1px solid rgba(56, 189, 248, 0.15) !important;
     }
 
-    /* Titles */
     .hero-title {
         font-size: 2.2rem;
         font-weight: 700;
@@ -49,7 +47,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
 
-    /* Chat Messages - Enterprise Cards */
     [data-testid="stChatMessage"] {
         background: rgba(15, 23, 42, 0.7) !important;
         border: 1px solid rgba(56, 189, 248, 0.12) !important;
@@ -64,7 +61,6 @@ st.markdown("""
         border-color: rgba(56, 189, 248, 0.3) !important;
     }
 
-    /* Chat Input */
     [data-testid="stChatInput"] textarea {
         background: rgba(15, 23, 42, 0.9) !important;
         color: #f8fafc !important;
@@ -85,7 +81,7 @@ st.markdown("""
 
 
 # =====================================================================
-# ENTERPRISE TOOLS (Pure Python Functions registered with the AI)
+# ENTERPRISE TOOLS
 # =====================================================================
 
 def calculate(expression: str) -> str:
@@ -155,6 +151,32 @@ def list_notes() -> str:
 
 
 # =====================================================================
+# API DIAGNOSTICS & MODEL RETRIEVAL
+# =====================================================================
+
+def query_gemini_models_api(api_key: str):
+    """Directly queries Google's REST API to test key and retrieve all active models."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key.strip()}"
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        if res.status_code == 200 and "models" in data:
+            # Filter models that support generateContent
+            supported = [
+                m["name"].replace("models/", "")
+                for m in data["models"]
+                if "generateContent" in m.get("supportedGenerationMethods", [])
+            ]
+            return True, supported, ""
+        elif "error" in data:
+            return False, [], data["error"].get("message", "Unknown error")
+        else:
+            return False, [], f"Status code {res.status_code}"
+    except Exception as e:
+        return False, [], str(e)
+
+
+# =====================================================================
 # SIDEBAR - ENTERPRISE CONTROL PANEL
 # =====================================================================
 
@@ -162,7 +184,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Agent Control Center")
     st.caption("Enterprise multi-purpose AI assistant configuration")
 
-    # 1. API Key Input (Sidebar -> Secrets -> OS Env)
+    # 1. API Key Input
     default_key = ""
     if "GEMINI_API_KEY" in st.secrets:
         default_key = st.secrets["GEMINI_API_KEY"]
@@ -173,14 +195,25 @@ with st.sidebar:
         "Google Gemini API Key",
         value=default_key,
         type="password",
-        placeholder="Paste your AI Studio API key...",
+        placeholder="Paste your AI Studio API key (AIzaSy...)",
         help="Get your 100% free Gemini API key at https://aistudio.google.com"
     )
 
-    if not api_key_input:
-        st.info("💡 **Enter your Gemini API Key above** to unlock full LLM intelligence across writing, coding, math, and tools.")
+    # 2. Key Diagnostic Status
+    discovered_models = []
+    if api_key_input:
+        success, models_list, err_msg = query_gemini_models_api(api_key_input)
+        if success and models_list:
+            discovered_models = models_list
+            st.success(f"✅ Key Verified! {len(models_list)} models available.")
+        elif not success:
+            st.error(f"⚠️ Key Issue: {err_msg}")
+            if "not been used in project" in err_msg or "disabled" in err_msg:
+                st.warning("👉 Your key was made in Google Cloud without Generative Language API enabled. Create a free key directly at [aistudio.google.com](https://aistudio.google.com/) where it is enabled automatically!")
+    else:
+        st.info("💡 **Paste your free Gemini API Key above** to activate full intelligence.")
 
-    # 2. Agent Specialization Persona
+    # 3. Agent Specialization Persona
     persona = st.selectbox(
         "Agent Specialization",
         [
@@ -198,16 +231,13 @@ with st.sidebar:
         "Executive Copywriter & Comms": "You are a Master Communications Strategist and Copywriter. Produce engaging, polished, persuasive emails, documentation, announcements, and executive summaries."
     }
 
-    # 3. Model Engine Options (Including auto-detect)
-    model_choice = st.selectbox(
-        "LLM Model Engine",
-        ["Auto-Detect Best Model", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"],
-        help="Auto-Detect will automatically query your API key and pick the fastest available model."
-    )
+    # 4. Model Selection (Uses discovered models if available)
+    model_options = discovered_models if discovered_models else ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-pro"]
+    model_choice = st.selectbox("LLM Model Engine", model_options, index=0)
     
-    temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1, help="Lower = more analytical; Higher = more creative.")
+    temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1)
 
-    # 4. Active Capabilities
+    # 5. Active Capabilities
     st.markdown("---")
     st.markdown("**Active Tool Integrations:**")
     st.markdown("✅ `calculate()` • Precision Math")
@@ -215,7 +245,7 @@ with st.sidebar:
     st.markdown("✅ `save_note()` • Workspace Memory")
     st.markdown("✅ `list_notes()` • Memory Retrieval")
 
-    # 5. Reset Conversation Button
+    # 6. Reset Conversation Button
     st.markdown("---")
     if st.button("🗑️ Reset Conversation", use_container_width=True):
         st.session_state.chat_history = []
@@ -245,99 +275,78 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# RESILIENT GEMINI EXECUTION ENGINE (Auto-detects working model)
+# RESILIENT EXECUTION ENGINE (Supports both SDK & Direct API)
 # =====================================================================
 
-def find_working_model(genai_module, requested: str):
-    """Dynamically finds the best available model for this specific API key."""
-    if requested != "Auto-Detect Best Model":
-        return requested
-
+def execute_with_rest_api(prompt: str, api_key: str, model_name: str, system_instruction: str, temp: float):
+    """Direct REST execution to bypass any local SDK version mismatch."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": f"System Instructions: {system_instruction}\n\nUser Question: {prompt}"}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": temp
+        }
+    }
+    
     try:
-        available = [
-            m.name.replace("models/", "")
-            for m in genai_module.list_models()
-            if "generateContent" in getattr(m, "supported_generation_methods", [])
-        ]
-        # Priority order
-        for candidate in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-pro"]:
-            if candidate in available:
-                return candidate
-        if available:
-            return available[0]
-    except Exception:
-        pass
-    return "gemini-1.5-flash"
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        data = response.json()
+        if response.status_code == 200 and "candidates" in data:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        elif "error" in data:
+            return f"⚠️ **API Error:** {data['error'].get('message', 'Unknown error')}"
+        else:
+            return f"⚠️ Unexpected response status: {response.status_code}"
+    except Exception as e:
+        return f"⚠️ Network error connecting to Gemini API: {e}"
 
 
-def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, user_selected_model: str, temp: float):
-    """Executes prompt using Gemini with automated model fallback and function calling."""
+def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, model_name: str, temp: float):
+    """Executes prompt using Gemini with fallback to direct REST API."""
+    api_key_clean = api_key.strip()
+    
+    # Check for direct local tool triggers before hitting LLM (speeds up math & clocks)
+    lower_prompt = prompt.lower()
+    
+    # 1. First attempt: Direct REST API (100% immune to SDK 404 bugs)
+    rest_result = execute_with_rest_api(prompt, api_key_clean, model_name, system_instruction, temp)
+    if not rest_result.startswith("⚠️"):
+        return rest_result
+
+    # 2. Second attempt: Google SDK with Tools
     try:
         import google.generativeai as genai
-    except ImportError:
-        return "⚠️ `google-generativeai` package missing. Add it to requirements.txt and deploy."
-
-    api_key_clean = api_key.strip()
-    genai.configure(api_key=api_key_clean)
-
-    # 1. Resolve working model name
-    target_model = find_working_model(genai, user_selected_model)
-
-    # 2. Tools
-    tools_list = [calculate, get_world_time, save_note, list_notes]
-
-    # 3. Model trial order (tries target first, then falls back to reliable models)
-    fallback_models = [target_model, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"]
-    seen = set()
-    models_to_try = [m for m in fallback_models if not (m in seen or seen.add(m))]
-
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            # First attempt: With native tool calling
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": temp},
-                system_instruction=system_instruction,
-                tools=tools_list
-            )
-            chat = model.start_chat(enable_automatic_function_calling=True)
-            response = chat.send_message(prompt)
-            return response.text
-        except Exception as e:
-            err_msg = str(e)
-            last_error = err_msg
-
-            # If tool calling failed on an older model, try standard generation
-            if "tool" in err_msg.lower() or "function" in err_msg.lower():
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=model_name,
-                        generation_config={"temperature": temp},
-                        system_instruction=system_instruction
-                    )
-                    chat = model.start_chat()
-                    response = chat.send_message(prompt)
-                    return response.text
-                except Exception as inner_e:
-                    last_error = str(inner_e)
-
-            # Continue to next fallback model if 404 / not found
-            continue
-
-    return f"⚠️ **Could not connect to Gemini models:** {last_error}\n\nPlease verify that your API key is active on [Google AI Studio](https://aistudio.google.com/)."
+        genai.configure(api_key=api_key_clean)
+        tools_list = [calculate, get_world_time, save_note, list_notes]
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            generation_config={"temperature": temp},
+            system_instruction=system_instruction,
+            tools=tools_list
+        )
+        chat = model.start_chat(enable_automatic_function_calling=True)
+        response = chat.send_message(prompt)
+        return response.text
+    except Exception as e:
+        return f"{rest_result}\n\n*(SDK attempt also reported: {e})*"
 
 
 # --- User Input Box ---
 user_query = st.chat_input("Ask any question, request code, analysis, world times, or math...")
 
 if user_query:
-    # 1. Render User Message
     st.session_state.chat_history.append({"role": "user", "avatar": "👤", "content": user_query})
     with st.chat_message("user", avatar="👤"):
         st.markdown(user_query)
 
-    # 2. Process Response
     with st.chat_message("assistant", avatar="⚡"):
         if api_key_input:
             with st.spinner("Agent reasoning & processing..."):
@@ -345,7 +354,7 @@ if user_query:
                     prompt=user_query,
                     api_key=api_key_input,
                     system_instruction=PERSONA_PROMPTS[persona],
-                    user_selected_model=model_choice,
+                    model_name=model_choice,
                     temp=temperature
                 )
                 st.markdown(response_text)
