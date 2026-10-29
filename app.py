@@ -70,7 +70,7 @@ st.markdown("""
         box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03) !important;
     }
 
-    /* User Message - Soft Azure Tint */
+    /* User Message - Soft Tint */
     [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]),
     [data-testid="stChatMessage"]:nth-child(even) {
         background-color: #F8FAFC !important;
@@ -104,7 +104,7 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    /* Seamless Bottom Input Area (No harsh borders, zero ugly bars) */
+    /* Seamless Bottom Input Area */
     [data-testid="stBottom"],
     [data-testid="stBottom"] > div,
     .stChatFloatingInputContainer {
@@ -230,28 +230,30 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# RESILIENT EXECUTION ENGINE (Auto-handles Quota & Search)
+# ROBUST EXECUTION ENGINE (Generous Timeout + Smart Search)
 # =====================================================================
+
+# Global HTTP session for connection reuse & lower latency
+http_session = requests.Session()
 
 def query_gemini(prompt: str, api_key: str, system_instruction: str):
     """
-    High-speed, quota-resilient execution.
-    Attempts live search grounding, with instant fallback to standard model if quota is tight.
+    Robust execution with 40-second timeout to allow Google Search Grounding to complete.
     """
     clean_key = api_key.strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={clean_key}"
     headers = {"Content-Type": "application/json"}
     
-    # Check if the query asks for recent/live data
+    # Check if real-time web information is required
     needs_search = any(w in prompt.lower() for w in ["latest", "recent", "news", "today", "2026", "current", "who is", "movie", "release", "update"])
     
-    # Strategy 1: If recent info requested, try with Google Search tool
+    # Strategy 1: Real-time search when needed (with 40s generous timeout)
     if needs_search:
         payload_with_search = {
             "contents": [
                 {
                     "parts": [
-                        {"text": f"Context: Current year is 2026. {system_instruction}\n\nQuestion: {prompt}"}
+                        {"text": f"Context: Current year is 2026. {system_instruction}\n\nUser Question: {prompt}"}
                     ]
                 }
             ],
@@ -259,21 +261,23 @@ def query_gemini(prompt: str, api_key: str, system_instruction: str):
             "generationConfig": {"temperature": 0.3}
         }
         try:
-            res = requests.post(url, headers=headers, json=payload_with_search, timeout=10)
+            res = http_session.post(url, headers=headers, json=payload_with_search, timeout=40)
             data = res.json()
             if res.status_code == 200 and "candidates" in data:
                 parts = data["candidates"][0].get("content", {}).get("parts", [])
                 if parts and "text" in parts[0]:
                     return parts[0]["text"]
+        except requests.exceptions.Timeout:
+            pass  # Fall through to fast standard call if search took too long
         except Exception:
             pass
 
-    # Strategy 2: Fast, Reliable Standard Execution (Uses 10x less quota, never hangs)
+    # Strategy 2: Fast, Reliable Standard Execution (takes ~2 seconds)
     standard_payload = {
         "contents": [
             {
                 "parts": [
-                    {"text": f"Context: The current year is 2026. {system_instruction}\n\nQuestion: {prompt}"}
+                    {"text": f"Context: Current year is 2026. {system_instruction}\n\nUser Question: {prompt}"}
                 ]
             }
         ],
@@ -281,7 +285,7 @@ def query_gemini(prompt: str, api_key: str, system_instruction: str):
     }
     
     try:
-        res = requests.post(url, headers=headers, json=standard_payload, timeout=10)
+        res = http_session.post(url, headers=headers, json=standard_payload, timeout=30)
         data = res.json()
         
         if res.status_code == 200 and "candidates" in data:
@@ -292,12 +296,12 @@ def query_gemini(prompt: str, api_key: str, system_instruction: str):
             error_code = data["error"].get("code", 0)
             error_msg = data["error"].get("message", "Unexpected API response")
             if error_code == 429 or "quota" in error_msg.lower():
-                return "⏳ **Google Free Tier Rate Limit:** You reached Google's temporary 1-minute request limit. Please wait 30 seconds and ask again, or create a fresh key at [aistudio.google.com](https://aistudio.google.com)."
+                return "⏳ **Google Rate Limit:** Free tier limit reached. Please wait 30–60 seconds, or create a fresh key at [aistudio.google.com](https://aistudio.google.com)."
             return f"⚠️ **Notice:** {error_msg}"
             
         return "Could not generate an answer. Please try asking again."
     except requests.exceptions.Timeout:
-        return "⏳ The request timed out. Please try asking a slightly more concise question."
+        return "⏳ The cloud server took longer than 30 seconds to respond. Please try asking your question again."
     except Exception as e:
         return f"⚠️ System message: {str(e)}"
 
@@ -333,7 +337,7 @@ if user_query:
                 st.markdown(math_ans)
                 final_answer = math_ans
             else:
-                with st.spinner("Processing..."):
+                with st.spinner("Researching and preparing answer..."):
                     final_answer = query_gemini(
                         prompt=user_query,
                         api_key=api_key_input,
