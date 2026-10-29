@@ -161,13 +161,21 @@ def query_gemini_models_api(api_key: str):
         res = requests.get(url, timeout=10)
         data = res.json()
         if res.status_code == 200 and "models" in data:
-            # Filter models that support generateContent
             supported = [
                 m["name"].replace("models/", "")
                 for m in data["models"]
                 if "generateContent" in m.get("supportedGenerationMethods", [])
             ]
-            return True, supported, ""
+            # Prioritize newest models at the top
+            priority_order = ["gemini-3.8-flash", "gemini-3.8-pro", "gemini-2.5-flash", "gemini-1.5-flash"]
+            sorted_models = []
+            for p in priority_order:
+                if p in supported:
+                    sorted_models.append(p)
+            for m in supported:
+                if m not in sorted_models:
+                    sorted_models.append(m)
+            return True, sorted_models, ""
         elif "error" in data:
             return False, [], data["error"].get("message", "Unknown error")
         else:
@@ -199,7 +207,7 @@ with st.sidebar:
         help="Get your 100% free Gemini API key at https://aistudio.google.com"
     )
 
-    # 2. Key Diagnostic Status
+    # 2. Key Diagnostic Status & Active Models
     discovered_models = []
     if api_key_input:
         success, models_list, err_msg = query_gemini_models_api(api_key_input)
@@ -208,8 +216,6 @@ with st.sidebar:
             st.success(f"✅ Key Verified! {len(models_list)} models available.")
         elif not success:
             st.error(f"⚠️ Key Issue: {err_msg}")
-            if "not been used in project" in err_msg or "disabled" in err_msg:
-                st.warning("👉 Your key was made in Google Cloud without Generative Language API enabled. Create a free key directly at [aistudio.google.com](https://aistudio.google.com/) where it is enabled automatically!")
     else:
         st.info("💡 **Paste your free Gemini API Key above** to activate full intelligence.")
 
@@ -231,8 +237,9 @@ with st.sidebar:
         "Executive Copywriter & Comms": "You are a Master Communications Strategist and Copywriter. Produce engaging, polished, persuasive emails, documentation, announcements, and executive summaries."
     }
 
-    # 4. Model Selection (Uses discovered models if available)
-    model_options = discovered_models if discovered_models else ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-pro"]
+    # 4. Model Selection (Default: gemini-3.8-flash)
+    fallback_defaults = ["gemini-3.8-flash", "gemini-3.8-pro", "gemini-2.5-flash", "gemini-1.5-flash"]
+    model_options = discovered_models if discovered_models else fallback_defaults
     model_choice = st.selectbox("LLM Model Engine", model_options, index=0)
     
     temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1)
@@ -257,7 +264,7 @@ with st.sidebar:
 # =====================================================================
 
 st.markdown('<div class="hero-title">⚡ Multi-Purpose Enterprise AI Agent</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="hero-subtitle">Role: <b>{persona}</b> • Powered by Google Gemini & Python Tools</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="hero-subtitle">Role: <b>{persona}</b> • Model: <b>{model_choice}</b></div>', unsafe_allow_html=True)
 
 # Initialize Session History
 if "chat_history" not in st.session_state:
@@ -265,7 +272,7 @@ if "chat_history" not in st.session_state:
         {
             "role": "assistant",
             "avatar": "⚡",
-            "content": f"Hello! I am your **{persona}**. I can answer complex questions, write and debug code, calculate math, check world timezones, and manage workspace notes. How may I assist you today?"
+            "content": f"Hello! I am your **{persona}**. Powered by Google Gemini (`{model_choice}`), I can write and debug code, calculate math, check world timezones, analyze business problems, and converse about anything. How may I assist you today?"
         }
     ]
 
@@ -275,12 +282,13 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# RESILIENT EXECUTION ENGINE (Supports both SDK & Direct API)
+# RESILIENT EXECUTION ENGINE
 # =====================================================================
 
 def execute_with_rest_api(prompt: str, api_key: str, model_name: str, system_instruction: str, temp: float):
-    """Direct REST execution to bypass any local SDK version mismatch."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
+    """Direct REST execution with the latest Gemini model endpoint."""
+    clean_model = model_name.replace("models/", "")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key.strip()}"
     headers = {"Content-Type": "application/json"}
     
     payload = {
@@ -297,7 +305,7 @@ def execute_with_rest_api(prompt: str, api_key: str, model_name: str, system_ins
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
         data = response.json()
         if response.status_code == 200 and "candidates" in data:
             return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -310,33 +318,35 @@ def execute_with_rest_api(prompt: str, api_key: str, model_name: str, system_ins
 
 
 def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, model_name: str, temp: float):
-    """Executes prompt using Gemini with fallback to direct REST API."""
+    """Executes prompt using Gemini with automated model fallback."""
     api_key_clean = api_key.strip()
     
-    # Check for direct local tool triggers before hitting LLM (speeds up math & clocks)
-    lower_prompt = prompt.lower()
-    
-    # 1. First attempt: Direct REST API (100% immune to SDK 404 bugs)
-    rest_result = execute_with_rest_api(prompt, api_key_clean, model_name, system_instruction, temp)
-    if not rest_result.startswith("⚠️"):
-        return rest_result
+    # Priority trial models: User choice first, then gemini-3.8-flash, gemini-3.8-pro
+    models_to_try = [model_name, "gemini-3.8-flash", "gemini-3.8-pro"]
+    seen = set()
+    unique_models = [m for m in models_to_try if not (m in seen or seen.add(m))]
 
-    # 2. Second attempt: Google SDK with Tools
+    last_error = ""
+    for current_model in unique_models:
+        result = execute_with_rest_api(prompt, api_key_clean, current_model, system_instruction, temp)
+        if not result.startswith("⚠️"):
+            return result
+        last_error = result
+
+    # Fallback to SDK if REST had issues
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key_clean)
-        tools_list = [calculate, get_world_time, save_note, list_notes]
         model = genai.GenerativeModel(
-            model_name=model_name,
+            model_name="gemini-3.8-flash",
             generation_config={"temperature": temp},
-            system_instruction=system_instruction,
-            tools=tools_list
+            system_instruction=system_instruction
         )
-        chat = model.start_chat(enable_automatic_function_calling=True)
+        chat = model.start_chat()
         response = chat.send_message(prompt)
         return response.text
     except Exception as e:
-        return f"{rest_result}\n\n*(SDK attempt also reported: {e})*"
+        return f"{last_error}\n\n*(SDK fallback reported: {e})*"
 
 
 # --- User Input Box ---
@@ -360,10 +370,7 @@ if user_query:
                 st.markdown(response_text)
         else:
             st.warning("⚠️ **Gemini API Key Required**")
-            st.markdown(
-                "Please enter your API Key in the left sidebar to unlock full LLM intelligence.\n\n"
-                "Get a free key in 30 seconds at [Google AI Studio](https://aistudio.google.com/)."
-            )
+            st.markdown("Please enter your API Key in the left sidebar to unlock full LLM intelligence.")
             response_text = "*(Awaiting Gemini API Key)*"
 
     st.session_state.chat_history.append({"role": "assistant", "avatar": "⚡", "content": response_text})
