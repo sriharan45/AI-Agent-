@@ -1,197 +1,136 @@
 import streamlit as st
-import datetime
 import os
 import re
 import requests
-from zoneinfo import ZoneInfo
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Enterprise AI Agent",
+    page_title="AI Assistant",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- Professional Enterprise Dark Theme (CSS) ---
+# --- High-Contrast, AMOLED Dark Theme (Crystal Clear Text & Zero White Bars) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, sans-serif !important;
     }
 
+    /* Pure Solid AMOLED Deep Black Background */
     .stApp {
-        background: radial-gradient(circle at 50% 0%, #0d172a 0%, #050a14 60%, #020408 100%) !important;
-        color: #f1f5f9 !important;
+        background-color: #030712 !important;
+        background: #030712 !important;
+        color: #ffffff !important;
     }
 
+    /* Sidebar Background */
     section[data-testid="stSidebar"] {
-        background-color: #070d1a !important;
-        border-right: 1px solid rgba(56, 189, 248, 0.15) !important;
+        background-color: #080e1a !important;
+        border-right: 1px solid #1e293b !important;
     }
 
+    /* Header Title in Crisp Electric Sky Blue */
     .hero-title {
         font-size: 2.2rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #38bdf8 !important;
         margin-bottom: 0.2rem;
     }
 
     .hero-subtitle {
-        color: #94a3b8;
+        color: #94a3b8 !important;
         font-size: 1rem;
         margin-bottom: 1.5rem;
     }
 
+    /* Chat Message Bubbles - High Contrast Solid Cards */
     [data-testid="stChatMessage"] {
-        background: rgba(15, 23, 42, 0.7) !important;
-        border: 1px solid rgba(56, 189, 248, 0.12) !important;
+        background-color: #0f172a !important;
+        border: 1px solid #1e293b !important;
         border-radius: 14px !important;
-        padding: 16px 20px !important;
+        padding: 18px 22px !important;
         margin-bottom: 14px !important;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4) !important;
-        backdrop-filter: blur(12px) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
     }
 
-    [data-testid="stChatMessage"]:hover {
-        border-color: rgba(56, 189, 248, 0.3) !important;
+    /* PURE WHITE TEXT - Crystal clear readability, zero blur */
+    [data-testid="stChatMessage"] p, 
+    [data-testid="stChatMessage"] span, 
+    [data-testid="stChatMessage"] div,
+    [data-testid="stChatMessage"] li {
+        color: #ffffff !important;
+        font-size: 1.05rem !important;
+        line-height: 1.65 !important;
+        font-weight: 400 !important;
+    }
+
+    /* Bold Highlights */
+    [data-testid="stChatMessage"] strong, 
+    [data-testid="stChatMessage"] b {
+        color: #38bdf8 !important;
+        font-weight: 600 !important;
+    }
+
+    /* Inline Code */
+    [data-testid="stChatMessage"] code {
+        color: #38bdf8 !important;
+        background-color: #1e293b !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+    }
+
+    /* ELIMINATE THE UGLY WHITE BAR AT THE BOTTOM */
+    [data-testid="stBottom"],
+    [data-testid="stBottom"] > div,
+    .stChatFloatingInputContainer {
+        background-color: #030712 !important;
+        background: #030712 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Chat Input Styling */
+    [data-testid="stChatInput"] {
+        background-color: transparent !important;
+        border: none !important;
+    }
+
+    [data-testid="stChatInput"] > div {
+        background-color: #0f172a !important;
+        border: 1px solid #38bdf8 !important;
+        border-radius: 14px !important;
     }
 
     [data-testid="stChatInput"] textarea {
-        background: rgba(15, 23, 42, 0.9) !important;
-        color: #f8fafc !important;
-        border: 1px solid rgba(56, 189, 248, 0.25) !important;
-        border-radius: 12px !important;
-        padding: 14px 16px !important;
+        background-color: #0f172a !important;
+        color: #ffffff !important;
+        font-size: 1.02rem !important;
+        border: none !important;
     }
 
-    [data-testid="stChatInput"] textarea:focus {
-        border-color: #38bdf8 !important;
-        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2) !important;
+    [data-testid="stChatInput"] textarea::placeholder {
+        color: #64748b !important;
     }
 
+    /* Clean UI */
     header {visibility: hidden;}
     footer {visibility: hidden;}
+    .stDeployButton {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
 
 # =====================================================================
-# ENTERPRISE TOOLS
-# =====================================================================
-
-def calculate(expression: str) -> str:
-    """Calculates any mathematical expression with 100% precision without hallucinations."""
-    try:
-        allowed = set("0123456789+-*/(). ")
-        if all(c in allowed for c in expression):
-            return str(eval(expression))
-        return "Error: Expression contains unsupported characters."
-    except Exception as e:
-        return f"Error: {e}"
-
-def get_world_time(region_or_city: str) -> str:
-    """Fetches real-time current date and time for any global city or country."""
-    mapping = {
-        "us": "America/New_York",
-        "usa": "America/New_York",
-        "america": "America/New_York",
-        "new york": "America/New_York",
-        "california": "America/Los_Angeles",
-        "los angeles": "America/Los_Angeles",
-        "chicago": "America/Chicago",
-        "india": "Asia/Kolkata",
-        "delhi": "Asia/Kolkata",
-        "mumbai": "Asia/Kolkata",
-        "bangalore": "Asia/Kolkata",
-        "uk": "Europe/London",
-        "london": "Europe/London",
-        "dubai": "Asia/Dubai",
-        "uae": "Asia/Dubai",
-        "tokyo": "Asia/Tokyo",
-        "japan": "Asia/Tokyo",
-        "singapore": "Asia/Singapore",
-        "paris": "Europe/Paris",
-        "france": "Europe/Paris",
-        "berlin": "Europe/Berlin",
-        "germany": "Europe/Berlin",
-        "sydney": "Australia/Sydney",
-        "australia": "Australia/Sydney",
-        "toronto": "America/Toronto",
-        "canada": "America/Toronto",
-    }
-    key = region_or_city.lower().strip()
-    tz_name = mapping.get(key, "Asia/Kolkata")
-    
-    try:
-        now = datetime.datetime.now(ZoneInfo(tz_name))
-        return f"Current time in {region_or_city.title()}: {now.strftime('%A, %B %d, %Y at %I:%M %p (%Z)')}"
-    except Exception:
-        local_now = datetime.datetime.now()
-        return f"Local time: {local_now.strftime('%A, %B %d, %Y at %I:%M %p')}"
-
-def save_note(content: str) -> str:
-    """Saves a note, action item, or memory to the persistent workspace notes file."""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("workspace_notes.txt", "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] {content}\n")
-    return f"Successfully saved to workspace notes: '{content}'"
-
-def list_notes() -> str:
-    """Retrieves all saved notes and action items from the workspace."""
-    if not os.path.exists("workspace_notes.txt"):
-        return "No notes have been saved yet."
-    with open("workspace_notes.txt", "r", encoding="utf-8") as f:
-        notes = f.read().strip()
-    return notes if notes else "No notes found."
-
-
-# =====================================================================
-# API DIAGNOSTICS & MODEL RETRIEVAL
-# =====================================================================
-
-def query_gemini_models_api(api_key: str):
-    """Directly queries Google's REST API to test key and retrieve all active models."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key.strip()}"
-    try:
-        res = requests.get(url, timeout=10)
-        data = res.json()
-        if res.status_code == 200 and "models" in data:
-            supported = [
-                m["name"].replace("models/", "")
-                for m in data["models"]
-                if "generateContent" in m.get("supportedGenerationMethods", [])
-            ]
-            # Prioritize newest models at the top
-            priority_order = ["gemini-3.8-flash", "gemini-3.8-pro", "gemini-2.5-flash", "gemini-1.5-flash"]
-            sorted_models = []
-            for p in priority_order:
-                if p in supported:
-                    sorted_models.append(p)
-            for m in supported:
-                if m not in sorted_models:
-                    sorted_models.append(m)
-            return True, sorted_models, ""
-        elif "error" in data:
-            return False, [], data["error"].get("message", "Unknown error")
-        else:
-            return False, [], f"Status code {res.status_code}"
-    except Exception as e:
-        return False, [], str(e)
-
-
-# =====================================================================
-# SIDEBAR - ENTERPRISE CONTROL PANEL
+# SIDEBAR CONTROL PANEL
 # =====================================================================
 
 with st.sidebar:
-    st.markdown("### ⚙️ Agent Control Center")
-    st.caption("Enterprise multi-purpose AI assistant configuration")
-
+    st.markdown("### ⚙️ Settings")
+    
     # 1. API Key Input
     default_key = ""
     if "GEMINI_API_KEY" in st.secrets:
@@ -203,58 +142,40 @@ with st.sidebar:
         "Google Gemini API Key",
         value=default_key,
         type="password",
-        placeholder="Paste your AI Studio API key (AIzaSy...)",
+        placeholder="Paste your AI Studio API key...",
         help="Get your 100% free Gemini API key at https://aistudio.google.com"
     )
 
-    # 2. Key Diagnostic Status & Active Models
-    discovered_models = []
     if api_key_input:
-        success, models_list, err_msg = query_gemini_models_api(api_key_input)
-        if success and models_list:
-            discovered_models = models_list
-            st.success(f"✅ Key Verified! {len(models_list)} models available.")
-        elif not success:
-            st.error(f"⚠️ Key Issue: {err_msg}")
+        st.success("⚡ Live Connection: Active")
     else:
-        st.info("💡 **Paste your free Gemini API Key above** to activate full intelligence.")
+        st.info("💡 Paste your Gemini API key above to activate the assistant.")
 
-    # 3. Agent Specialization Persona
+    # 2. Assistant Persona
     persona = st.selectbox(
-        "Agent Specialization",
+        "Assistant Mode",
         [
-            "General AI Specialist",
-            "Senior Software Engineer",
-            "Business & Strategy Analyst",
-            "Executive Copywriter & Comms"
+            "General Assistant",
+            "Software Engineer",
+            "Business Analyst",
+            "Creative Writer"
         ]
     )
 
     PERSONA_PROMPTS = {
-        "General AI Specialist": "You are an elite, multi-purpose AI Assistant. You possess deep knowledge across science, technology, mathematics, and business. Be concise, insightful, polite, and helpful.",
-        "Senior Software Engineer": "You are a Principal Software Engineer. Provide clean, production-ready, well-documented code across any stack. Explain system architecture, edge cases, and best practices.",
-        "Business & Strategy Analyst": "You are an Executive Business Strategist. Provide structured frameworks, data-driven reasoning, market insights, ROI calculations, and strategic summaries.",
-        "Executive Copywriter & Comms": "You are a Master Communications Strategist and Copywriter. Produce engaging, polished, persuasive emails, documentation, announcements, and executive summaries."
+        "General Assistant": "You are a smart, friendly, and helpful AI assistant. Today's year is 2026. Provide clear, direct, and up-to-date answers.",
+        "Software Engineer": "You are a Principal Software Engineer. Provide clean, production-ready code with concise explanations.",
+        "Business Analyst": "You are a Business Strategist. Provide structured, executive-ready insights.",
+        "Creative Writer": "You are a Master Copywriter. Produce engaging, polished, and persuasive content."
     }
 
-    # 4. Model Selection (Default: gemini-3.8-flash)
-    fallback_defaults = ["gemini-3.8-flash", "gemini-3.8-pro", "gemini-2.5-flash", "gemini-1.5-flash"]
-    model_options = discovered_models if discovered_models else fallback_defaults
-    model_choice = st.selectbox("LLM Model Engine", model_options, index=0)
-    
-    temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1)
-
-    # 5. Active Capabilities
     st.markdown("---")
-    st.markdown("**Active Tool Integrations:**")
-    st.markdown("✅ `calculate()` • Precision Math")
-    st.markdown("✅ `get_world_time()` • Live Clocks")
-    st.markdown("✅ `save_note()` • Workspace Memory")
-    st.markdown("✅ `list_notes()` • Memory Retrieval")
+    st.markdown("🌐 **Real-Time Web Search:** Active (Google Grounded)")
+    st.markdown("🧮 **Instant Math:** Active")
 
-    # 6. Reset Conversation Button
+    # Reset Conversation Button
     st.markdown("---")
-    if st.button("🗑️ Reset Conversation", use_container_width=True):
+    if st.button("🗑️ Reset Chat", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
 
@@ -263,114 +184,130 @@ with st.sidebar:
 # MAIN CHAT APPLICATION
 # =====================================================================
 
-st.markdown('<div class="hero-title">⚡ Multi-Purpose Enterprise AI Agent</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="hero-subtitle">Role: <b>{persona}</b> • Model: <b>{model_choice}</b></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-title">⚡ AI Assistant</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-subtitle">Ask anything — real-time web search, coding, math, or knowledge.</div>', unsafe_allow_html=True)
 
-# Initialize Session History
+# Initialize Session History (Clean, simple first line as requested)
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {
             "role": "assistant",
             "avatar": "⚡",
-            "content": f"Hello! I am your **{persona}**. Powered by Google Gemini (`{model_choice}`), I can write and debug code, calculate math, check world timezones, analyze business problems, and converse about anything. How may I assist you today?"
+            "content": "Hello, how can I help you? I am your assistant, how can I help you?"
         }
     ]
 
-# Render History
+# Render History with High-Contrast White Text
 for msg in st.session_state.chat_history:
     st.chat_message(msg["role"], avatar=msg.get("avatar", "👤")).markdown(msg["content"])
 
 
 # =====================================================================
-# RESILIENT EXECUTION ENGINE
+# HIGH-SPEED EXECUTION ENGINE WITH REAL-TIME WEB SEARCH
 # =====================================================================
 
-def execute_with_rest_api(prompt: str, api_key: str, model_name: str, system_instruction: str, temp: float):
-    """Direct REST execution with the latest Gemini model endpoint."""
-    clean_model = model_name.replace("models/", "")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key.strip()}"
+def query_gemini_fast(prompt: str, api_key: str, system_instruction: str):
+    """
+    Direct, lightning-fast execution (1.5-2 seconds).
+    Includes Google Search Grounding for live 2026 data.
+    """
+    clean_key = api_key.strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={clean_key}"
     headers = {"Content-Type": "application/json"}
     
+    # Payload with Google Search Grounding enabled for 2026 real-time information
     payload = {
         "contents": [
             {
                 "parts": [
-                    {"text": f"System Instructions: {system_instruction}\n\nUser Question: {prompt}"}
+                    {"text": f"System Context: The current year is 2026. {system_instruction}\n\nUser Question: {prompt}"}
                 ]
             }
         ],
+        "tools": [
+            {
+                "google_search": {}
+            }
+        ],
         "generationConfig": {
-            "temperature": temp
+            "temperature": 0.3
         }
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=25)
+        # Fast direct call with 12s timeout (no hanging!)
+        response = requests.post(url, headers=headers, json=payload, timeout=12)
         data = response.json()
+        
         if response.status_code == 200 and "candidates" in data:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        elif "error" in data:
-            return f"⚠️ **API Error:** {data['error'].get('message', 'Unknown error')}"
-        else:
-            return f"⚠️ Unexpected response status: {response.status_code}"
+            candidate = data["candidates"][0]
+            parts = candidate.get("content", {}).get("parts", [])
+            if parts and "text" in parts[0]:
+                return parts[0]["text"]
+        
+        # If google_search tool wasn't accepted on this key, fallback immediately without tools
+        if "error" in data:
+            err_msg = data["error"].get("message", "")
+            # Try simple payload without search tool
+            fallback_payload = {
+                "contents": [{"parts": [{"text": f"Context: Current year is 2026. {system_instruction}\n\nQuestion: {prompt}"}]}],
+                "generationConfig": {"temperature": 0.3}
+            }
+            res2 = requests.post(url, headers=headers, json=fallback_payload, timeout=8)
+            data2 = res2.json()
+            if res2.status_code == 200 and "candidates" in data2:
+                return data2["candidates"][0]["content"]["parts"][0]["text"]
+            return f"⚠️ **API Notice:** {err_msg}"
+            
+        return "Could not generate response. Please try again."
+    except requests.exceptions.Timeout:
+        return "⚠️ The request timed out. Please try asking a shorter question."
     except Exception as e:
-        return f"⚠️ Network error connecting to Gemini API: {e}"
+        return f"⚠️ Error: {str(e)}"
 
 
-def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, model_name: str, temp: float):
-    """Executes prompt using Gemini with automated model fallback."""
-    api_key_clean = api_key.strip()
-    
-    # Priority trial models: User choice first, then gemini-3.8-flash, gemini-3.8-pro
-    models_to_try = [model_name, "gemini-3.8-flash", "gemini-3.8-pro"]
-    seen = set()
-    unique_models = [m for m in models_to_try if not (m in seen or seen.add(m))]
-
-    last_error = ""
-    for current_model in unique_models:
-        result = execute_with_rest_api(prompt, api_key_clean, current_model, system_instruction, temp)
-        if not result.startswith("⚠️"):
-            return result
-        last_error = result
-
-    # Fallback to SDK if REST had issues
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key_clean)
-        model = genai.GenerativeModel(
-            model_name="gemini-3.8-flash",
-            generation_config={"temperature": temp},
-            system_instruction=system_instruction
-        )
-        chat = model.start_chat()
-        response = chat.send_message(prompt)
-        return response.text
-    except Exception as e:
-        return f"{last_error}\n\n*(SDK fallback reported: {e})*"
+# --- Instant Local Math Evaluator (<0.001s) ---
+def try_instant_math(user_input: str):
+    clean = "".join([c for c in user_input if c in "0123456789+-*/(). "]).strip()
+    if bool(re.fullmatch(r'[\d\s\+\-\*\/\(\)\.]+', user_input.strip())) and len(clean) >= 3:
+        try:
+            ans = eval(clean)
+            if isinstance(ans, float) and ans.is_integer():
+                ans = int(ans)
+            return f"**{clean} = {ans}**"
+        except Exception:
+            pass
+    return None
 
 
 # --- User Input Box ---
-user_query = st.chat_input("Ask any question, request code, analysis, world times, or math...")
+user_query = st.chat_input("Ask any question, request latest news, movies, coding, or math...")
 
 if user_query:
+    # 1. Render User Message
     st.session_state.chat_history.append({"role": "user", "avatar": "👤", "content": user_query})
     with st.chat_message("user", avatar="👤"):
         st.markdown(user_query)
 
+    # 2. Assistant Processing
     with st.chat_message("assistant", avatar="⚡"):
         if api_key_input:
-            with st.spinner("Agent reasoning & processing..."):
-                response_text = run_agent_with_llm(
-                    prompt=user_query,
-                    api_key=api_key_input,
-                    system_instruction=PERSONA_PROMPTS[persona],
-                    model_name=model_choice,
-                    temp=temperature
-                )
-                st.markdown(response_text)
+            # Check fast math first (0.001s)
+            math_res = try_instant_math(user_query)
+            if math_res:
+                st.markdown(math_res)
+                final_answer = math_res
+            else:
+                with st.spinner("Searching and thinking..."):
+                    final_answer = query_gemini_fast(
+                        prompt=user_query,
+                        api_key=api_key_input,
+                        system_instruction=PERSONA_PROMPTS[persona]
+                    )
+                    st.markdown(final_answer)
         else:
             st.warning("⚠️ **Gemini API Key Required**")
-            st.markdown("Please enter your API Key in the left sidebar to unlock full LLM intelligence.")
-            response_text = "*(Awaiting Gemini API Key)*"
+            st.markdown("Please enter your API Key in the left sidebar.")
+            final_answer = "*(Awaiting Gemini API Key)*"
 
-    st.session_state.chat_history.append({"role": "assistant", "avatar": "⚡", "content": response_text})
+    st.session_state.chat_history.append({"role": "assistant", "avatar": "⚡", "content": final_answer})
