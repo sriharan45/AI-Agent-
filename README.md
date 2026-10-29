@@ -1,6 +1,6 @@
 # 👋 I am here to help you
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](PASTE_YOUR_STREAMLIT_LINK_HERE)
+[![Open in Streamlit](https://ubupxaqpjhskvjx9taqz9e.streamlit.app/)
 
 ### 🌐 [👉 Click Here to Test & Chat with the Live Agent!](PASTE_YOUR_STREAMLIT_LINK_HERE)
 
