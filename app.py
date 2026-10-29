@@ -64,21 +64,6 @@ st.markdown("""
         border-color: rgba(56, 189, 248, 0.3) !important;
     }
 
-    /* Tool Call Badges */
-    .tool-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(14, 165, 233, 0.15);
-        color: #38bdf8;
-        border: 1px solid rgba(56, 189, 248, 0.3);
-        padding: 4px 10px;
-        border-radius: 8px;
-        font-size: 0.8rem;
-        font-family: 'JetBrains Mono', monospace;
-        margin-bottom: 8px;
-    }
-
     /* Chat Input */
     [data-testid="stChatInput"] textarea {
         background: rgba(15, 23, 42, 0.9) !important;
@@ -93,7 +78,6 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(56, 189, 248, 0.2) !important;
     }
 
-    /* Hide standard clutter */
     header {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -101,7 +85,7 @@ st.markdown("""
 
 
 # =====================================================================
-# ENTERPRISE TOOLS REGISTRY (Python Functions the LLM can invoke)
+# ENTERPRISE TOOLS (Pure Python Functions registered with the AI)
 # =====================================================================
 
 def calculate(expression: str) -> str:
@@ -178,7 +162,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Agent Control Center")
     st.caption("Enterprise multi-purpose AI assistant configuration")
 
-    # 1. API Key Input (Checked in order: Sidebar Input -> Streamlit Secrets -> OS Env)
+    # 1. API Key Input (Sidebar -> Secrets -> OS Env)
     default_key = ""
     if "GEMINI_API_KEY" in st.secrets:
         default_key = st.secrets["GEMINI_API_KEY"]
@@ -194,9 +178,9 @@ with st.sidebar:
     )
 
     if not api_key_input:
-        st.info("💡 **Need a free API Key?**\n1. Go to [aistudio.google.com](https://aistudio.google.com)\n2. Click **Get API key**\n3. Paste it above to activate full LLM intelligence!")
+        st.info("💡 **Enter your Gemini API Key above** to unlock full LLM intelligence across writing, coding, math, and tools.")
 
-    # 2. Agent Persona / System Role
+    # 2. Agent Specialization Persona
     persona = st.selectbox(
         "Agent Specialization",
         [
@@ -214,19 +198,24 @@ with st.sidebar:
         "Executive Copywriter & Comms": "You are a Master Communications Strategist and Copywriter. Produce engaging, polished, persuasive emails, documentation, announcements, and executive summaries."
     }
 
-    # 3. Model Selector & Temperature
-    model_choice = st.selectbox("LLM Model Engine", ["gemini-1.5-flash", "gemini-1.5-pro"])
-    temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1, help="Lower = more precise and analytical; Higher = more creative.")
+    # 3. Model Engine Options (Including auto-detect)
+    model_choice = st.selectbox(
+        "LLM Model Engine",
+        ["Auto-Detect Best Model", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"],
+        help="Auto-Detect will automatically query your API key and pick the fastest available model."
+    )
+    
+    temperature = st.slider("Reasoning Temperature", min_value=0.0, max_value=1.0, value=0.4, step=0.1, help="Lower = more analytical; Higher = more creative.")
 
-    # 4. Active Enterprise Capabilities
+    # 4. Active Capabilities
     st.markdown("---")
     st.markdown("**Active Tool Integrations:**")
-    st.markdown("✅ `calculate()` • Math Precision Engine")
-    st.markdown("✅ `get_world_time()` • Live Global Clock")
+    st.markdown("✅ `calculate()` • Precision Math")
+    st.markdown("✅ `get_world_time()` • Live Clocks")
     st.markdown("✅ `save_note()` • Workspace Memory")
     st.markdown("✅ `list_notes()` • Memory Retrieval")
 
-    # 5. Clear Session Button
+    # 5. Reset Conversation Button
     st.markdown("---")
     if st.button("🗑️ Reset Conversation", use_container_width=True):
         st.session_state.chat_history = []
@@ -256,34 +245,87 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# LLM AGENT EXECUTION ENGINE
+# RESILIENT GEMINI EXECUTION ENGINE (Auto-detects working model)
 # =====================================================================
 
-def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, model_name: str, temp: float):
-    """Executes the prompt using Google Gemini LLM with registered tools and function calling."""
+def find_working_model(genai_module, requested: str):
+    """Dynamically finds the best available model for this specific API key."""
+    if requested != "Auto-Detect Best Model":
+        return requested
+
+    try:
+        available = [
+            m.name.replace("models/", "")
+            for m in genai_module.list_models()
+            if "generateContent" in getattr(m, "supported_generation_methods", [])
+        ]
+        # Priority order
+        for candidate in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-pro"]:
+            if candidate in available:
+                return candidate
+        if available:
+            return available[0]
+    except Exception:
+        pass
+    return "gemini-1.5-flash"
+
+
+def run_agent_with_llm(prompt: str, api_key: str, system_instruction: str, user_selected_model: str, temp: float):
+    """Executes prompt using Gemini with automated model fallback and function calling."""
     try:
         import google.generativeai as genai
     except ImportError:
-        return "⚠️ The `google-generativeai` package is not installed. Add it to requirements.txt and run `pip install google-generativeai`."
+        return "⚠️ `google-generativeai` package missing. Add it to requirements.txt and deploy."
 
-    try:
-        genai.configure(api_key=api_key)
+    api_key_clean = api_key.strip()
+    genai.configure(api_key=api_key_clean)
 
-        # Register functions as native LLM tools
-        tools_list = [calculate, get_world_time, save_note, list_notes]
+    # 1. Resolve working model name
+    target_model = find_working_model(genai, user_selected_model)
 
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            generation_config={"temperature": temp},
-            system_instruction=system_instruction,
-            tools=tools_list
-        )
+    # 2. Tools
+    tools_list = [calculate, get_world_time, save_note, list_notes]
 
-        chat = model.start_chat(enable_automatic_function_calling=True)
-        response = chat.send_message(prompt)
-        return response.text
-    except Exception as e:
-        return f"⚠️ **Error communicating with Gemini LLM:** {str(e)}\n\nPlease ensure your API Key is valid."
+    # 3. Model trial order (tries target first, then falls back to reliable models)
+    fallback_models = [target_model, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"]
+    seen = set()
+    models_to_try = [m for m in fallback_models if not (m in seen or seen.add(m))]
+
+    last_error = ""
+    for model_name in models_to_try:
+        try:
+            # First attempt: With native tool calling
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                generation_config={"temperature": temp},
+                system_instruction=system_instruction,
+                tools=tools_list
+            )
+            chat = model.start_chat(enable_automatic_function_calling=True)
+            response = chat.send_message(prompt)
+            return response.text
+        except Exception as e:
+            err_msg = str(e)
+            last_error = err_msg
+
+            # If tool calling failed on an older model, try standard generation
+            if "tool" in err_msg.lower() or "function" in err_msg.lower():
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        generation_config={"temperature": temp},
+                        system_instruction=system_instruction
+                    )
+                    chat = model.start_chat()
+                    response = chat.send_message(prompt)
+                    return response.text
+                except Exception as inner_e:
+                    last_error = str(inner_e)
+
+            # Continue to next fallback model if 404 / not found
+            continue
+
+    return f"⚠️ **Could not connect to Gemini models:** {last_error}\n\nPlease verify that your API key is active on [Google AI Studio](https://aistudio.google.com/)."
 
 
 # --- User Input Box ---
@@ -297,27 +339,22 @@ if user_query:
 
     # 2. Process Response
     with st.chat_message("assistant", avatar="⚡"):
-        # If API key is provided -> Full LLM Agent Execution!
         if api_key_input:
             with st.spinner("Agent reasoning & processing..."):
                 response_text = run_agent_with_llm(
                     prompt=user_query,
                     api_key=api_key_input,
                     system_instruction=PERSONA_PROMPTS[persona],
-                    model_name=model_choice,
+                    user_selected_model=model_choice,
                     temp=temperature
                 )
                 st.markdown(response_text)
         else:
-            # Fallback when no API Key is entered yet
-            st.warning("⚠️ **Gemini API Key Required for Full LLM Intelligence**")
+            st.warning("⚠️ **Gemini API Key Required**")
             st.markdown(
-                "To let this agent answer *any question in the universe* (coding, writing, analysis, reasoning), please paste your free Gemini API key in the sidebar.\n\n"
-                "**How to get one in 30 seconds (100% Free):**\n"
-                "1. Visit [Google AI Studio](https://aistudio.google.com/)\n"
-                "2. Sign in with Google and click **Get API key**\n"
-                "3. Paste it in the left sidebar control center!"
+                "Please enter your API Key in the left sidebar to unlock full LLM intelligence.\n\n"
+                "Get a free key in 30 seconds at [Google AI Studio](https://aistudio.google.com/)."
             )
-            response_text = "*(Awaiting Gemini API Key for unbounded reasoning)*"
+            response_text = "*(Awaiting Gemini API Key)*"
 
     st.session_state.chat_history.append({"role": "assistant", "avatar": "⚡", "content": response_text})
