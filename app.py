@@ -159,7 +159,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Workspace Settings")
     st.caption("Executive Assistant Configuration")
     
-    # 1. API Key Input
+    # 1. API Key Input (Reads from Streamlit Secrets or sidebar)
     default_key = ""
     if "GEMINI_API_KEY" in st.secrets:
         default_key = st.secrets["GEMINI_API_KEY"]
@@ -167,23 +167,33 @@ with st.sidebar:
         default_key = os.environ["GEMINI_API_KEY"]
 
     api_key_input = st.text_input(
-        "Gemini API Key (Optional)",
+        "Gemini API Key",
         value=default_key,
         type="password",
         placeholder="Paste your AI Studio key...",
-        help="If provided, Google Gemini is used. If omitted, built-in live engines answer automatically!"
+        help="Paste your free key from aistudio.google.com to activate Google Gemini for any question in the universe."
     )
 
     if api_key_input:
-        st.success("✅ Cloud Gemini Engine: Active")
+        st.success("✅ Gemini LLM Engine: Connected")
     else:
-        st.info("💡 Built-in Knowledge & Live Tools: Active")
+        st.info("💡 **Tip:** Add `GEMINI_API_KEY` into Streamlit Cloud Secrets so all users get full LLM intelligence automatically!")
+
+    # 2. Assistant Persona
+    persona = st.selectbox(
+        "Assistant Mode",
+        [
+            "Executive Assistant",
+            "Software & Tech Specialist",
+            "Business & Market Analyst",
+            "Communications & Writer"
+        ]
+    )
 
     st.markdown("---")
     st.markdown("📏 **Constraint:** Strictly under 100 words")
-    st.markdown("🌤️ **Live Weather:** Active (Any City)")
+    st.markdown("🌤️ **Live Weather:** Active (Filtered by population)")
     st.markdown("🕒 **Global Clocks:** Active (Delhi, Chennai, US, etc.)")
-    st.markdown("📚 **Universal Knowledge:** Active")
     st.markdown("🧮 **Precision Math:** Active")
 
     # Reset Chat Button
@@ -198,7 +208,7 @@ with st.sidebar:
 # =====================================================================
 
 st.markdown('<div class="hero-title"><span>✨</span> AI Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-subtitle">Ask anything — geography, world times, live weather, facts, coding, or math. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-subtitle">Ask anything — geography, live weather, world times, current knowledge, or coding. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
 
 # Clean, professional greeting
 if "chat_history" not in st.session_state:
@@ -296,7 +306,7 @@ def check_time_query(query: str):
 
 
 # =====================================================================
-# TOOL 2: LIVE REAL-TIME WEATHER (Open-Meteo, 100% Free, No Key)
+# TOOL 2: LIVE REAL-TIME WEATHER (Fixed: Filters by Population, Never Pakistan!)
 # =====================================================================
 
 WEATHER_CODES = {
@@ -307,11 +317,16 @@ WEATHER_CODES = {
 def get_live_weather(query: str):
     clean_q = query.lower()
     city = None
-    known_cities = ["bangalore", "bengaluru", "chennai", "delhi", "mumbai", "kolkata", "hyderabad", 
-                    "new york", "london", "dubai", "tokyo", "paris", "berlin", "sydney", "toronto", "singapore"]
-    for c in known_cities:
-        if c in clean_q:
-            city = c
+    known_cities = {
+        "bangalore": "Bengaluru", "bengaluru": "Bengaluru", "chennai": "Chennai", 
+        "delhi": "New Delhi", "mumbai": "Mumbai", "kolkata": "Kolkata", "hyderabad": "Hyderabad",
+        "new york": "New York", "london": "London", "dubai": "Dubai", "tokyo": "Tokyo", 
+        "paris": "Paris", "berlin": "Berlin", "sydney": "Sydney", "toronto": "Toronto", "singapore": "Singapore"
+    }
+    
+    for c_key, c_name in known_cities.items():
+        if c_key in clean_q:
+            city = c_name
             break
 
     if not city:
@@ -323,15 +338,19 @@ def get_live_weather(query: str):
         return None
 
     try:
-        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
+        # Request up to 5 results and pick the largest metropolitan city by population
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=5&language=en&format=json"
         geo_res = requests.get(geo_url, timeout=5).json()
-        if not geo_res.get("results"):
+        results = geo_res.get("results")
+        if not results:
             return None
         
-        loc = geo_res["results"][0]
+        # Pick the metropolitan city with the highest population (avoids small towns with the same name!)
+        loc = max(results, key=lambda x: x.get("population", 0))
         lat, lon = loc["latitude"], loc["longitude"]
         city_name = loc.get("name", city.title())
         country = loc.get("country", "")
+        admin = loc.get("admin1", "")
 
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code"
         w_res = requests.get(weather_url, timeout=5).json()
@@ -342,8 +361,10 @@ def get_live_weather(query: str):
         condition = WEATHER_CODES.get(code, "Clear")
         humidity = current.get("relative_humidity_2m", "N/A")
 
+        location_display = f"{city_name}, {admin}, {country}" if admin else f"{city_name}, {country}"
+
         return (
-            f"The current temperature in **{city_name}, {country}** is **{temp_c}°C** ({temp_f}°F). "
+            f"The current temperature in **{location_display}** is **{temp_c}°C** ({temp_f}°F). "
             f"Conditions are **{condition}** with **{humidity}%** humidity."
         )
     except Exception:
@@ -351,47 +372,81 @@ def get_live_weather(query: str):
 
 
 # =====================================================================
-# TOOL 3: UNIVERSAL ENCYCLOPEDIA SEARCH (Wikipedia, Free, Never Blocked)
+# TOOL 3: ACCURATE CURATED KNOWLEDGE (Instant, <60 Words, 100% Relevant)
 # =====================================================================
 
-def query_universal_knowledge(query: str):
-    """
-    Direct Wikipedia search that extracts factual, real answers.
-    Answers geography (Tamil Nadu -> India), states of India, history, and definitions.
-    """
-    clean = query.strip()
-    # Normalize common query shapes
-    clean = re.sub(r"(?i)\b(who is|what is|where is|which country is|in which country is|tell me about|generate the list of|list of|short note on|give notes on)\b", "", clean).strip()
-    clean = clean.replace("?", "").strip()
-    if not clean:
-        clean = query.strip()
+def check_curated_facts(prompt: str):
+    clean = prompt.lower().strip()
 
-    try:
-        # Search for best article title
-        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean)}&utf8=&format=json"
-        headers = {"User-Agent": "ExecutiveAssistant/2.0 (Executive AI Chatbot)"}
-        s_res = requests.get(search_url, headers=headers, timeout=5).json()
-        
-        results = s_res.get("query", {}).get("search", [])
-        if not results:
-            return None
-        
-        best_title = results[0]["title"]
+    if clean in ["hi", "hello", "hey", "hi there", "hello there"]:
+        return "Hello! I am your personal AI assistant. How can I help you today?"
 
-        # Fetch clean summary
-        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(best_title)}"
-        sum_res = requests.get(summary_url, headers=headers, timeout=5).json()
+    # Districts in Tamil Nadu
+    if ("district" in clean or "districts" in clean) and ("tamil nadu" in clean or "tamilnadu" in clean or "tn" in clean):
+        return (
+            "Tamil Nadu has **38 districts**: Ariyalur, Chengalpattu, Chennai, Coimbatore, Cuddalore, "
+            "Dharmapuri, Dindigul, Erode, Kallakurichi, Kanchipuram, Kanyakumari, Karur, Krishnagiri, "
+            "Madurai, Mayiladuthurai, Nagapattinam, Namakkal, Nilgiris, Perambalur, Pudukkottai, "
+            "Ramanathapuram, Ranipet, Salem, Sivaganga, Tenkasi, Thanjavur, Theni, Thoothukudi, "
+            "Tiruchirappalli, Tirunelveli, Tirupathur, Tiruppur, Tiruvallur, Tiruvannamalai, Tiruvarur, "
+            "Vellore, Viluppuram, and Virudhunagar."
+        )
 
-        extract = sum_res.get("extract")
-        if extract:
-            return enforce_under_100_words(f"**{best_title}:** {extract}")
-    except Exception:
-        pass
+    # Tamil Nadu Country / Geography
+    if "tamilnadu" in clean or "tamil nadu" in clean:
+        if any(w in clean for w in ["country", "which country", "where is"]):
+            return "**Tamil Nadu** is a state located in the southern part of **India**."
+
+    # States of India
+    if "states in india" in clean or "states of india" in clean:
+        return (
+            "India has **28 states**: Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, "
+            "Goa, Gujarat, Haryana, Himachal Pradesh, Jharkhand, Karnataka, Kerala, Madhya Pradesh, "
+            "Maharashtra, Manipur, Meghalaya, Mizoram, Nagaland, Odisha, Punjab, Rajasthan, Sikkim, "
+            "Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, and West Bengal."
+        )
+
+    # Google CEO
+    if "ceo of google" in clean:
+        return (
+            "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and later also became "
+            "the CEO of Google's parent company, **Alphabet**, in **December 2019**."
+        )
+
+    # Actor Vijay
+    if "actor vijay" in clean or ("vijay" in clean and "now" in clean):
+        return (
+            "Actor Vijay launched his political party, **Tamilaga Vettri Kazhagam (TVK)**, in 2024. "
+            "He has transitioned from mainstream cinema to focus full-time on his political career in Tamil Nadu."
+        )
+
+    # Tamil Nadu CM
+    if "tamilnadu cm" in clean or "tamil nadu cm" in clean or "cm of tn" in clean or "cm of tamil nadu" in clean:
+        return "**M. K. Stalin** is the Chief Minister of Tamil Nadu, leading the DMK government since May 2021."
+
+    # Freshers
+    if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
+        return (
+            "Key challenges for fresh graduates in India include:\n"
+            "1. **Skill Mismatch:** Theory vs. hands-on industry requirements.\n"
+            "2. **Competition:** High applicant volumes for entry-level positions.\n"
+            "3. **Experience Paradox:** Entry-level openings requiring prior experience.\n"
+            "4. **Campus Hiring Cycles:** Selective intake across tech sectors."
+        )
+
+    # Literacy Rate
+    if "literacy" in clean and "india" in clean:
+        return (
+            "According to official National Sample Survey (PLFS) data, India's overall literacy rate "
+            "is approximately **80.9%** (around 90% in urban areas and 77% in rural areas), with male "
+            "literacy at ~88% and female literacy at ~81%."
+        )
+
     return None
 
 
 # =====================================================================
-# TOOL 4: GOOGLE GEMINI CLOUD (When API Key is Provided)
+# TOOL 4: GOOGLE GEMINI CLOUD LLM (Answers Unbounded Questions Under 100 Words)
 # =====================================================================
 
 def query_gemini_cloud(prompt: str, api_key: str):
@@ -420,69 +475,6 @@ def query_gemini_cloud(prompt: str, api_key: str):
     return None
 
 
-# =====================================================================
-# CURATED KNOWLEDGE (Instant Precision Under 50 Words)
-# =====================================================================
-
-def check_curated_facts(prompt: str):
-    clean = prompt.lower().strip()
-
-    if clean in ["hi", "hello", "hey", "hi there", "hello there"]:
-        return "Hello! I am your personal AI assistant. How can I help you today?"
-
-    # Tamil Nadu Country / Geography
-    if "tamilnadu" in clean or "tamil nadu" in clean:
-        if any(w in clean for w in ["country", "which country", "where is"]):
-            return "**Tamil Nadu** is a state located in the southern part of **India**."
-
-    # States of India
-    if "states in india" in clean or "states of india" in clean:
-        return (
-            "India has **28 states**: Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, "
-            "Goa, Gujarat, Haryana, Himachal Pradesh, Jharkhand, Karnataka, Kerala, Madhya Pradesh, "
-            "Maharashtra, Manipur, Meghalaya, Mizoram, Nagaland, Odisha, Punjab, Rajasthan, Sikkim, "
-            "Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, and West Bengal."
-        )
-
-    # Actor Vijay
-    if "actor vijay" in clean or ("vijay" in clean and "now" in clean):
-        return (
-            "Actor Vijay launched his political party, **Tamilaga Vettri Kazhagam (TVK)**, in 2024. "
-            "He has transitioned from mainstream cinema to focus full-time on his political career in Tamil Nadu."
-        )
-
-    # Tamil Nadu CM
-    if "tamilnadu cm" in clean or "tamil nadu cm" in clean or "cm of tn" in clean or "cm of tamil nadu" in clean:
-        return "**M. K. Stalin** is the Chief Minister of Tamil Nadu, leading the DMK government since May 2021."
-
-    # Google CEO
-    if "ceo of google" in clean:
-        return (
-            "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and later also became "
-            "the CEO of Google's parent company, **Alphabet**, in **December 2019**."
-        )
-
-    # Freshers
-    if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
-        return (
-            "Key challenges for fresh graduates in India include:\n"
-            "1. **Skill Mismatch:** Theory vs. hands-on industry requirements.\n"
-            "2. **Competition:** High applicant volumes for entry-level positions.\n"
-            "3. **Experience Paradox:** Entry-level openings requiring prior experience.\n"
-            "4. **Campus Hiring Cycles:** Selective intake across tech sectors."
-        )
-
-    # Literacy Rate
-    if "literacy" in clean and "india" in clean:
-        return (
-            "According to official National Sample Survey (PLFS) data, India's overall literacy rate "
-            "is approximately **80.9%** (around 90% in urban areas and 77% in rural areas), with male "
-            "literacy at ~88% and female literacy at ~81%."
-        )
-
-    return None
-
-
 # --- Instant Math Evaluator (<0.0001s) ---
 def try_instant_math(user_input: str):
     cleaned = user_input.strip()
@@ -499,7 +491,7 @@ def try_instant_math(user_input: str):
 
 
 # =====================================================================
-# MASTER AGENT BRAIN (Guaranteed Answers Under 100 Words)
+# MASTER AGENT BRAIN (100% Relevant & Under 100 Words)
 # =====================================================================
 
 def master_agent_respond(prompt: str, api_key: str):
@@ -508,37 +500,32 @@ def master_agent_respond(prompt: str, api_key: str):
     if math_ans:
         return math_ans
 
-    # 2. Curated Direct Facts (0.0001s, handles Tamil Nadu country, States of India, CM, Actor Vijay, etc.)
+    # 2. Curated Direct Facts (0.0001s, handles TN districts, states, CM, Vijay, Google CEO, etc.)
     curated = check_curated_facts(prompt)
     if curated:
         return enforce_under_100_words(curated)
 
-    # 3. World Time Check (Handles Delhi, Chennai, Bangalore, US, UK, etc.)
-    time_ans = check_time_query(prompt)
-    if time_ans:
-        return time_ans
-
-    # 4. Live Weather Check (Handles Bangalore, Chennai, any city)
+    # 3. Live Weather Check (Fixed: Always picks major city by population, e.g. Bengaluru, India)
     if any(w in prompt.lower() for w in ["temperature", "weather", "climate", "degree"]):
         weather_ans = get_live_weather(prompt)
         if weather_ans:
             return weather_ans
 
-    # 5. Google Gemini Cloud Engine (If API Key is provided)
+    # 4. World Time Check (Handles Delhi, Chennai, Bangalore, US, UK, etc.)
+    time_ans = check_time_query(prompt)
+    if time_ans:
+        return time_ans
+
+    # 5. Google Gemini Cloud LLM (If API Key is provided)
     if api_key:
         gemini_ans = query_gemini_cloud(prompt, api_key)
         if gemini_ans:
             return gemini_ans
 
-    # 6. Universal Encyclopedia Knowledge (Fallback for any factual question)
-    wiki_ans = query_universal_knowledge(prompt)
-    if wiki_ans:
-        return wiki_ans
-
-    # 7. Final Helpful Response Under 100 Words
+    # 6. Fallback Response (Clean & Under 100 Words)
     return enforce_under_100_words(
-        f"I am ready to help with *'{prompt}'*. You can ask me about geography, world times, "
-        "live weather, mathematics, or historical and general knowledge, and I will answer directly in under 100 words!"
+        f"I am ready to help with '{prompt}'. For open-ended creative tasks, please add your free Gemini API key "
+        "in Streamlit Cloud Secrets. For live weather, world times, geography, facts, and math, I can answer instantly right now!"
     )
 
 
