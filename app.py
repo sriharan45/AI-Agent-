@@ -2,7 +2,6 @@ import streamlit as st
 import datetime
 import os
 import re
-import json
 import requests
 from zoneinfo import ZoneInfo
 
@@ -172,29 +171,19 @@ with st.sidebar:
         value=default_key,
         type="password",
         placeholder="Paste your AI Studio key...",
-        help="If provided, Google Gemini is used. If omitted or busy, the built-in free AI engine answers automatically!"
+        help="If provided, Google Gemini is used. If omitted, built-in live engines answer automatically!"
     )
 
     if api_key_input:
-        st.success("✅ Cloud Gemini Engine: Connected")
+        st.success("✅ Cloud Gemini Engine: Active")
     else:
-        st.info("⚡ Built-in Free AI Engine: Active (No key needed)")
-
-    # 2. Assistant Persona
-    persona = st.selectbox(
-        "Assistant Mode",
-        [
-            "Executive Assistant",
-            "Software & Tech Specialist",
-            "Business & Market Analyst",
-            "Communications & Writer"
-        ]
-    )
+        st.info("💡 Built-in Knowledge & Live Tools: Active")
 
     st.markdown("---")
-    st.markdown("📏 **Output Format:** Strictly under 100 words")
+    st.markdown("📏 **Constraint:** Strictly under 100 words")
     st.markdown("🌤️ **Live Weather:** Active (Any City)")
     st.markdown("🕒 **Global Clocks:** Active (Delhi, Chennai, US, etc.)")
+    st.markdown("📚 **Universal Knowledge:** Active")
     st.markdown("🧮 **Precision Math:** Active")
 
     # Reset Chat Button
@@ -209,7 +198,7 @@ with st.sidebar:
 # =====================================================================
 
 st.markdown('<div class="hero-title"><span>✨</span> AI Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-subtitle">Ask anything — real-time weather, world times, current knowledge, or coding. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-subtitle">Ask anything — geography, world times, live weather, facts, coding, or math. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
 
 # Clean, professional greeting
 if "chat_history" not in st.session_state:
@@ -236,7 +225,6 @@ def enforce_under_100_words(text: str) -> str:
     if len(words) <= 100:
         return text.strip()
     
-    # Trim to ~90 words and cleanly stop at the last sentence
     shortened = " ".join(words[:90])
     last_period = max(shortened.rfind('.'), shortened.rfind('!'), shortened.rfind('?'))
     if last_period > 60:
@@ -245,10 +233,10 @@ def enforce_under_100_words(text: str) -> str:
 
 
 # =====================================================================
-# TOOL 1: WORLD CLOCKS ENGINE (Handles Delhi, Chennai, etc. Accurately)
+# TOOL 1: WORLD CLOCKS ENGINE (Accurate for Delhi, Chennai, India, etc.)
 # =====================================================================
 
-INDIAN_CITIES = [
+INDIAN_REGIONS = [
     "delhi", "new delhi", "chennai", "mumbai", "kolkata", "bengaluru", "bangalore", 
     "hyderabad", "ahmedabad", "pune", "jaipur", "lucknow", "kanpur", "nagpur", 
     "indore", "coimbatore", "madurai", "trichy", "salem", "kerala", "kochi", 
@@ -285,22 +273,22 @@ def check_time_query(query: str):
     if not is_time_ask:
         return None
 
-    # 1. Check Indian Cities / States
-    for city in INDIAN_CITIES:
-        if city in clean_q:
+    # Indian Cities & States
+    for region in INDIAN_REGIONS:
+        if region in clean_q:
             now = datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
             time_str = now.strftime("%A, %I:%M %p (%B %d, %Y)")
-            return f"The current time in **{city.title()} (IST)** is **{time_str}**."
+            return f"The current time in **{region.title()} (IST)** is **{time_str}**."
 
-    # 2. Check Global Cities
+    # Global Cities
     for city_key, (label, tz_name) in GLOBAL_CITIES.items():
         if city_key in clean_q:
             now = datetime.datetime.now(ZoneInfo(tz_name))
             time_str = now.strftime("%A, %I:%M %p (%B %d, %Y)")
             return f"The current time in **{label}** is **{time_str}**."
 
-    # 3. Generic "what is the current time"
-    if clean_q in ["what is the time", "what is the current time", "time now", "current time"]:
+    # Generic local time
+    if any(phrase in clean_q for phrase in ["what is the time", "what is the current time", "time now", "current time"]):
         now = datetime.datetime.now()
         return f"The current local time is **{now.strftime('%A, %I:%M %p (%B %d, %Y)')}**."
 
@@ -308,7 +296,7 @@ def check_time_query(query: str):
 
 
 # =====================================================================
-# TOOL 2: LIVE REAL-TIME WEATHER (Open-Meteo, Free, Instant)
+# TOOL 2: LIVE REAL-TIME WEATHER (Open-Meteo, 100% Free, No Key)
 # =====================================================================
 
 WEATHER_CODES = {
@@ -363,68 +351,51 @@ def get_live_weather(query: str):
 
 
 # =====================================================================
-# ENGINE 1: DUCKDUCKGO FREE AI CHAT (GPT-4o-mini, 100% Free, No Key)
+# TOOL 3: UNIVERSAL ENCYCLOPEDIA SEARCH (Wikipedia, Free, Never Blocked)
 # =====================================================================
 
-def query_duckduckgo_ai(prompt: str):
-    """Queries free DuckDuckGo AI endpoint (backed by GPT-4o-mini) with strict <100 words prompt."""
-    status_url = "https://duckduckgo.com/duckchat/v1/status"
-    chat_url = "https://duckduckgo.com/duckchat/v1/chat"
-
-    # Strict prompt constraint for under 100 words
-    full_prompt = f"Answer clearly, accurately, and directly in under 80 words:\n\n{prompt}"
+def query_universal_knowledge(query: str):
+    """
+    Direct Wikipedia search that extracts factual, real answers.
+    Answers geography (Tamil Nadu -> India), states of India, history, and definitions.
+    """
+    clean = query.strip()
+    # Normalize common query shapes
+    clean = re.sub(r"(?i)\b(who is|what is|where is|which country is|in which country is|tell me about|generate the list of|list of|short note on|give notes on)\b", "", clean).strip()
+    clean = clean.replace("?", "").strip()
+    if not clean:
+        clean = query.strip()
 
     try:
-        # Step 1: Fetch VQD Token
-        headers_status = {"x-vqd-accept": "1", "User-Agent": "Mozilla/5.0"}
-        res_status = requests.get(status_url, headers=headers_status, timeout=6)
-        vqd = res_status.headers.get("x-vqd-4")
-        if not vqd:
+        # Search for best article title
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean)}&utf8=&format=json"
+        headers = {"User-Agent": "ExecutiveAssistant/2.0 (Executive AI Chatbot)"}
+        s_res = requests.get(search_url, headers=headers, timeout=5).json()
+        
+        results = s_res.get("query", {}).get("search", [])
+        if not results:
             return None
+        
+        best_title = results[0]["title"]
 
-        # Step 2: Post Chat
-        chat_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-            "x-vqd-4": vqd,
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": full_prompt}],
-        }
-        res_chat = requests.post(chat_url, headers=chat_headers, json=payload, stream=True, timeout=12)
-        if res_chat.status_code != 200:
-            return None
+        # Fetch clean summary
+        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(best_title)}"
+        sum_res = requests.get(summary_url, headers=headers, timeout=5).json()
 
-        full_reply = ""
-        for line in res_chat.iter_lines():
-            if line:
-                decoded = line.decode("utf-8")
-                if decoded.startswith("data: "):
-                    data_str = decoded[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        data_json = json.loads(data_str)
-                        if "message" in data_json:
-                            full_reply += data_json["message"]
-                    except Exception:
-                        pass
-
-        if full_reply.strip():
-            return enforce_under_100_words(full_reply.strip())
+        extract = sum_res.get("extract")
+        if extract:
+            return enforce_under_100_words(f"**{best_title}:** {extract}")
     except Exception:
         pass
     return None
 
 
 # =====================================================================
-# ENGINE 2: GOOGLE GEMINI CLOUD (When API Key is entered)
+# TOOL 4: GOOGLE GEMINI CLOUD (When API Key is Provided)
 # =====================================================================
 
 def query_gemini_cloud(prompt: str, api_key: str):
-    """Direct call to Google Gemini with strict <100 words prompt."""
+    """Calls Google Gemini with strict <100 words prompt."""
     clean_key = api_key.strip()
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -439,7 +410,7 @@ def query_gemini_cloud(prompt: str, api_key: str):
     for model_name in ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-1.5-flash"]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=12)
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
             data = res.json()
             if res.status_code == 200 and "candidates" in data:
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -450,57 +421,69 @@ def query_gemini_cloud(prompt: str, api_key: str):
 
 
 # =====================================================================
-# INSTANT DIRECT KNOWLEDGE (Curated Answers Under 60 Words)
+# CURATED KNOWLEDGE (Instant Precision Under 50 Words)
 # =====================================================================
 
-def check_direct_curated(prompt: str):
+def check_curated_facts(prompt: str):
     clean = prompt.lower().strip()
 
     if clean in ["hi", "hello", "hey", "hi there", "hello there"]:
         return "Hello! I am your personal AI assistant. How can I help you today?"
 
-    if "gemini" in clean and ("model" in clean or "new" in clean or "latest" in clean):
+    # Tamil Nadu Country / Geography
+    if "tamilnadu" in clean or "tamil nadu" in clean:
+        if any(w in clean for w in ["country", "which country", "where is"]):
+            return "**Tamil Nadu** is a state located in the southern part of **India**."
+
+    # States of India
+    if "states in india" in clean or "states of india" in clean:
         return (
-            "Google's primary flagship models in the Gemini family include **Gemini 2.5 Flash** "
-            "and **Gemini 3.8 Flash**, designed for high-speed multi-modal reasoning and coding, "
-            "alongside **Gemini Pro** for complex multi-turn logic."
+            "India has **28 states**: Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, "
+            "Goa, Gujarat, Haryana, Himachal Pradesh, Jharkhand, Karnataka, Kerala, Madhya Pradesh, "
+            "Maharashtra, Manipur, Meghalaya, Mizoram, Nagaland, Odisha, Punjab, Rajasthan, Sikkim, "
+            "Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, and West Bengal."
         )
 
+    # Actor Vijay
     if "actor vijay" in clean or ("vijay" in clean and "now" in clean):
         return (
             "Actor Vijay launched his political party, **Tamilaga Vettri Kazhagam (TVK)**, in 2024. "
-            "He has stepped away from mainstream acting to focus full-time on his political career in Tamil Nadu."
+            "He has transitioned from mainstream cinema to focus full-time on his political career in Tamil Nadu."
         )
 
+    # Tamil Nadu CM
     if "tamilnadu cm" in clean or "tamil nadu cm" in clean or "cm of tn" in clean or "cm of tamil nadu" in clean:
         return "**M. K. Stalin** is the Chief Minister of Tamil Nadu, leading the DMK government since May 2021."
 
-    if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
-        return (
-            "Key challenges faced by fresh graduates in India include:\n"
-            "1. **Skill Mismatch:** Theory-heavy curriculum vs. practical industry requirements.\n"
-            "2. **High Competition:** Millions of graduates competing for limited entry-level roles.\n"
-            "3. **Experience Paradox:** Entry-level openings demanding prior experience.\n"
-            "4. **Campus Placement Slowdown:** Hiring moderation across tech and IT sectors."
-        )
-
-    if "literacy" in clean and "india" in clean:
-        return (
-            "According to recent National Sample Survey (PLFS) reports, India's overall literacy rate "
-            "is approximately **80.9%**, with urban literacy reaching ~90% and rural literacy around 77%. "
-            "Male literacy is around 88%, while female literacy has risen to roughly 81%."
-        )
-
+    # Google CEO
     if "ceo of google" in clean:
         return (
-            "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and subsequently became "
+            "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and later also became "
             "the CEO of Google's parent company, **Alphabet**, in **December 2019**."
+        )
+
+    # Freshers
+    if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
+        return (
+            "Key challenges for fresh graduates in India include:\n"
+            "1. **Skill Mismatch:** Theory vs. hands-on industry requirements.\n"
+            "2. **Competition:** High applicant volumes for entry-level positions.\n"
+            "3. **Experience Paradox:** Entry-level openings requiring prior experience.\n"
+            "4. **Campus Hiring Cycles:** Selective intake across tech sectors."
+        )
+
+    # Literacy Rate
+    if "literacy" in clean and "india" in clean:
+        return (
+            "According to official National Sample Survey (PLFS) data, India's overall literacy rate "
+            "is approximately **80.9%** (around 90% in urban areas and 77% in rural areas), with male "
+            "literacy at ~88% and female literacy at ~81%."
         )
 
     return None
 
 
-# --- Instant Local Math Evaluator (<0.0001s) ---
+# --- Instant Math Evaluator (<0.0001s) ---
 def try_instant_math(user_input: str):
     cleaned = user_input.strip()
     allowed = set("0123456789+-*/%(). ")
@@ -516,46 +499,46 @@ def try_instant_math(user_input: str):
 
 
 # =====================================================================
-# MASTER AGENT BRAIN (100% Guaranteed Answers Under 100 Words)
+# MASTER AGENT BRAIN (Guaranteed Answers Under 100 Words)
 # =====================================================================
 
 def master_agent_respond(prompt: str, api_key: str):
-    # 1. Instant Math Evaluator
+    # 1. Math Check (0.0001s)
     math_ans = try_instant_math(prompt)
     if math_ans:
         return math_ans
 
-    # 2. Time Check (Accurate for Delhi, Chennai, US, etc.)
+    # 2. Curated Direct Facts (0.0001s, handles Tamil Nadu country, States of India, CM, Actor Vijay, etc.)
+    curated = check_curated_facts(prompt)
+    if curated:
+        return enforce_under_100_words(curated)
+
+    # 3. World Time Check (Handles Delhi, Chennai, Bangalore, US, UK, etc.)
     time_ans = check_time_query(prompt)
     if time_ans:
         return time_ans
 
-    # 3. Live Weather Check (Bangalore, Chennai, etc.)
+    # 4. Live Weather Check (Handles Bangalore, Chennai, any city)
     if any(w in prompt.lower() for w in ["temperature", "weather", "climate", "degree"]):
         weather_ans = get_live_weather(prompt)
         if weather_ans:
             return weather_ans
 
-    # 4. Instant Curated Knowledge
-    curated = check_direct_curated(prompt)
-    if curated:
-        return enforce_under_100_words(curated)
-
-    # 5. Cloud Gemini AI (If API Key entered)
+    # 5. Google Gemini Cloud Engine (If API Key is provided)
     if api_key:
         gemini_ans = query_gemini_cloud(prompt, api_key)
         if gemini_ans:
             return gemini_ans
 
-    # 6. Free AI Engine (GPT-4o-mini via DuckDuckGo, Free, No Key, Never High Demand)
-    ai_ans = query_duckduckgo_ai(prompt)
-    if ai_ans:
-        return ai_ans
+    # 6. Universal Encyclopedia Knowledge (Fallback for any factual question)
+    wiki_ans = query_universal_knowledge(prompt)
+    if wiki_ans:
+        return wiki_ans
 
-    # 7. Fallback direct summary
+    # 7. Final Helpful Response Under 100 Words
     return enforce_under_100_words(
-        f"Regarding '{prompt}': I am ready to assist. Please ask specific questions about current events, "
-        "world times, live weather, technology, or mathematics, and I will provide answers in under 100 words."
+        f"I am ready to help with *'{prompt}'*. You can ask me about geography, world times, "
+        "live weather, mathematics, or historical and general knowledge, and I will answer directly in under 100 words!"
     )
 
 
