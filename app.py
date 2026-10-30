@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import os
 import re
+import random
 import requests
 from zoneinfo import ZoneInfo
 
@@ -159,7 +160,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Workspace Settings")
     st.caption("Executive Assistant Configuration")
     
-    # 1. API Key Input (Reads from Streamlit Secrets or sidebar)
+    # 1. API Key Input
     default_key = ""
     if "GEMINI_API_KEY" in st.secrets:
         default_key = st.secrets["GEMINI_API_KEY"]
@@ -171,13 +172,13 @@ with st.sidebar:
         value=default_key,
         type="password",
         placeholder="Paste your AI Studio key...",
-        help="Paste your free key from aistudio.google.com to activate Google Gemini for any question in the universe."
+        help="Optional: Paste your key from aistudio.google.com to power custom unbounded generations."
     )
 
     if api_key_input:
-        st.success("✅ Gemini LLM Engine: Connected")
+        st.success("✅ Gemini Engine: Connected")
     else:
-        st.info("💡 **Tip:** Add `GEMINI_API_KEY` into Streamlit Cloud Secrets so all users get full LLM intelligence automatically!")
+        st.info("💡 **Tip:** Add `GEMINI_API_KEY` into Streamlit Cloud Secrets so all visitors get full cloud AI automatically!")
 
     # 2. Assistant Persona
     persona = st.selectbox(
@@ -194,6 +195,7 @@ with st.sidebar:
     st.markdown("📏 **Constraint:** Strictly under 100 words")
     st.markdown("🌤️ **Live Weather:** Active (Filtered by population)")
     st.markdown("🕒 **Global Clocks:** Active (Delhi, Chennai, US, etc.)")
+    st.markdown("🧠 **Mind-Refreshing Facts:** Active")
     st.markdown("🧮 **Precision Math:** Active")
 
     # Reset Chat Button
@@ -208,7 +210,7 @@ with st.sidebar:
 # =====================================================================
 
 st.markdown('<div class="hero-title"><span>✨</span> AI Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-subtitle">Ask anything — geography, live weather, world times, current knowledge, or coding. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-subtitle">Ask anything — facts, weather, world times, geography, coding, or math. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
 
 # Clean, professional greeting
 if "chat_history" not in st.session_state:
@@ -243,7 +245,28 @@ def enforce_under_100_words(text: str) -> str:
 
 
 # =====================================================================
-# TOOL 1: WORLD CLOCKS ENGINE (Accurate for Delhi, Chennai, India, etc.)
+# MIND-REFRESHING FACTS & INSPIRING CONTENT
+# =====================================================================
+
+CURATED_FACTS = [
+    "✨ **Honey never spoils:** Archaeologists excavating ancient Egyptian tombs found 3,000-year-old pots of honey that are still completely edible due to its low moisture and acidic pH.",
+    "🌌 **Trees vs Stars:** Earth has an estimated 3 trillion trees, which is vastly more than the 100 to 400 billion stars in our entire Milky Way galaxy.",
+    "🐙 **Three Hearts:** An octopus possesses three hearts, nine brains (one central brain and one in each arm), and copper-based blue blood.",
+    "🪐 **Venusian Days:** A single day on Venus (243 Earth days to rotate once) is longer than an entire Venusian year (225 Earth days to complete an orbit around the Sun).",
+    "🗼 **Growing Tower:** The Eiffel Tower expands up to 15 centimeters (6 inches) taller during hot summer days because metal expands with heat.",
+    "🐬 **Dolphin Names:** Dolphins develop unique signature whistles that act just like names to address and call specific members of their pod.",
+    "🌿 **Brain Power:** Although the human brain accounts for only about 2% of total body weight, it consumes over 20% of the body's daily oxygen and energy."
+]
+
+CURATED_JOKES = [
+    "😄 Why do programmers prefer dark mode? Because light attracts bugs!",
+    "😄 Why did the Python programmer wear glasses? Because they couldn't C#.",
+    "😄 There are 10 types of people in the world: those who understand binary, and those who don't."
+]
+
+
+# =====================================================================
+# TOOL 1: WORLD CLOCKS ENGINE
 # =====================================================================
 
 INDIAN_REGIONS = [
@@ -306,7 +329,7 @@ def check_time_query(query: str):
 
 
 # =====================================================================
-# TOOL 2: LIVE REAL-TIME WEATHER (Fixed: Filters by Population, Never Pakistan!)
+# TOOL 2: LIVE REAL-TIME WEATHER (Population-Sorted)
 # =====================================================================
 
 WEATHER_CODES = {
@@ -338,14 +361,12 @@ def get_live_weather(query: str):
         return None
 
     try:
-        # Request up to 5 results and pick the largest metropolitan city by population
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=5&language=en&format=json"
         geo_res = requests.get(geo_url, timeout=5).json()
         results = geo_res.get("results")
         if not results:
             return None
         
-        # Pick the metropolitan city with the highest population (avoids small towns with the same name!)
         loc = max(results, key=lambda x: x.get("population", 0))
         lat, lon = loc["latitude"], loc["longitude"]
         city_name = loc.get("name", city.title())
@@ -372,16 +393,37 @@ def get_live_weather(query: str):
 
 
 # =====================================================================
-# TOOL 3: ACCURATE CURATED KNOWLEDGE (Instant, <60 Words, 100% Relevant)
+# TOOL 3: ACCURATE CURATED KNOWLEDGE & RESPONSES
 # =====================================================================
 
 def check_curated_facts(prompt: str):
     clean = prompt.lower().strip()
 
-    if clean in ["hi", "hello", "hey", "hi there", "hello there"]:
+    # 1. Greetings (All variations: hi, hy, hii, heyy, namaste, etc.)
+    greetings = ["hi", "hy", "hii", "hiii", "hey", "heyy", "hello", "yo", "sup", "namaste", "vanakkam", "halo"]
+    if clean in greetings or any(clean.startswith(g) for g in ["good morning", "good afternoon", "good evening", "good day"]):
         return "Hello! I am your personal AI assistant. How can I help you today?"
 
-    # Districts in Tamil Nadu
+    # 2. Who are you / Abilities
+    if any(phrase in clean for phrase in ["who are you", "what are you", "what can you do", "introduce yourself"]):
+        return (
+            "I am an Executive AI Assistant created by Sriharan. I can provide real-time world clocks, "
+            "live weather for any city, precision arithmetic, facts, and concise knowledge in under 100 words."
+        )
+
+    # 3. How are you
+    if "how are you" in clean:
+        return "I am functioning smoothly and ready to assist you! What can I solve or look up for you today?"
+
+    # 4. Facts (fact for the day, tell me a fact, random fact, etc.)
+    if any(w in clean for w in ["fact", "facts", "knowledge"]):
+        return random.choice(CURATED_FACTS)
+
+    # 5. Jokes
+    if any(w in clean for w in ["joke", "jokes"]):
+        return random.choice(CURATED_JOKES)
+
+    # 6. Districts in Tamil Nadu
     if ("district" in clean or "districts" in clean) and ("tamil nadu" in clean or "tamilnadu" in clean or "tn" in clean):
         return (
             "Tamil Nadu has **38 districts**: Ariyalur, Chengalpattu, Chennai, Coimbatore, Cuddalore, "
@@ -392,12 +434,12 @@ def check_curated_facts(prompt: str):
             "Vellore, Viluppuram, and Virudhunagar."
         )
 
-    # Tamil Nadu Country / Geography
+    # 7. Tamil Nadu Country / Geography
     if "tamilnadu" in clean or "tamil nadu" in clean:
         if any(w in clean for w in ["country", "which country", "where is"]):
             return "**Tamil Nadu** is a state located in the southern part of **India**."
 
-    # States of India
+    # 8. States of India
     if "states in india" in clean or "states of india" in clean:
         return (
             "India has **28 states**: Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, "
@@ -406,25 +448,25 @@ def check_curated_facts(prompt: str):
             "Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, and West Bengal."
         )
 
-    # Google CEO
+    # 9. Google CEO
     if "ceo of google" in clean:
         return (
             "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and later also became "
             "the CEO of Google's parent company, **Alphabet**, in **December 2019**."
         )
 
-    # Actor Vijay
+    # 10. Actor Vijay
     if "actor vijay" in clean or ("vijay" in clean and "now" in clean):
         return (
             "Actor Vijay launched his political party, **Tamilaga Vettri Kazhagam (TVK)**, in 2024. "
             "He has transitioned from mainstream cinema to focus full-time on his political career in Tamil Nadu."
         )
 
-    # Tamil Nadu CM
+    # 11. Tamil Nadu CM
     if "tamilnadu cm" in clean or "tamil nadu cm" in clean or "cm of tn" in clean or "cm of tamil nadu" in clean:
         return "**M. K. Stalin** is the Chief Minister of Tamil Nadu, leading the DMK government since May 2021."
 
-    # Freshers
+    # 12. Freshers
     if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
         return (
             "Key challenges for fresh graduates in India include:\n"
@@ -434,7 +476,7 @@ def check_curated_facts(prompt: str):
             "4. **Campus Hiring Cycles:** Selective intake across tech sectors."
         )
 
-    # Literacy Rate
+    # 13. Literacy Rate
     if "literacy" in clean and "india" in clean:
         return (
             "According to official National Sample Survey (PLFS) data, India's overall literacy rate "
@@ -446,7 +488,7 @@ def check_curated_facts(prompt: str):
 
 
 # =====================================================================
-# TOOL 4: GOOGLE GEMINI CLOUD LLM (Answers Unbounded Questions Under 100 Words)
+# TOOL 4: GOOGLE GEMINI CLOUD LLM
 # =====================================================================
 
 def query_gemini_cloud(prompt: str, api_key: str):
@@ -491,7 +533,7 @@ def try_instant_math(user_input: str):
 
 
 # =====================================================================
-# MASTER AGENT BRAIN (100% Relevant & Under 100 Words)
+# MASTER AGENT BRAIN
 # =====================================================================
 
 def master_agent_respond(prompt: str, api_key: str):
@@ -500,12 +542,12 @@ def master_agent_respond(prompt: str, api_key: str):
     if math_ans:
         return math_ans
 
-    # 2. Curated Direct Facts (0.0001s, handles TN districts, states, CM, Vijay, Google CEO, etc.)
+    # 2. Curated Direct Facts & Greetings (Handles hy/hi, facts, jokes, states, districts, CM, etc.)
     curated = check_curated_facts(prompt)
     if curated:
         return enforce_under_100_words(curated)
 
-    # 3. Live Weather Check (Fixed: Always picks major city by population, e.g. Bengaluru, India)
+    # 3. Live Weather Check (Population-sorted)
     if any(w in prompt.lower() for w in ["temperature", "weather", "climate", "degree"]):
         weather_ans = get_live_weather(prompt)
         if weather_ans:
@@ -524,13 +566,13 @@ def master_agent_respond(prompt: str, api_key: str):
 
     # 6. Fallback Response (Clean & Under 100 Words)
     return enforce_under_100_words(
-        f"I am ready to help with '{prompt}'. For open-ended creative tasks, please add your free Gemini API key "
-        "in Streamlit Cloud Secrets. For live weather, world times, geography, facts, and math, I can answer instantly right now!"
+        f"I am ready to help with '{prompt}'. Ask me for **daily facts**, **live weather**, "
+        "**world clocks**, **geography**, or **math**, and I will answer directly in under 100 words!"
     )
 
 
 # --- User Input Box ---
-user_query = st.chat_input("Ask any question, request live weather, time, coding, or facts...")
+user_query = st.chat_input("Ask any question, request facts, live weather, time, or math...")
 
 if user_query:
     # 1. User Message
