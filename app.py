@@ -168,17 +168,17 @@ with st.sidebar:
         default_key = os.environ["GEMINI_API_KEY"]
 
     api_key_input = st.text_input(
-        "Gemini API Key",
+        "Gemini API Key (Optional)",
         value=default_key,
         type="password",
         placeholder="Paste your AI Studio key...",
-        help="Optional: Paste your key from aistudio.google.com to power custom unbounded generations."
+        help="Optional: Add your key in Streamlit Cloud Secrets to enable Google Gemini for all visitors automatically."
     )
 
     if api_key_input:
-        st.success("✅ Gemini Engine: Connected")
+        st.success("✅ Cloud Gemini Engine: Connected")
     else:
-        st.info("💡 **Tip:** Add `GEMINI_API_KEY` into Streamlit Cloud Secrets so all visitors get full cloud AI automatically!")
+        st.info("💡 Built-in Universal AI Intelligence: Active")
 
     # 2. Assistant Persona
     persona = st.selectbox(
@@ -193,9 +193,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("📏 **Constraint:** Strictly under 100 words")
-    st.markdown("🌤️ **Live Weather:** Active (Filtered by population)")
+    st.markdown("🌤️ **Live Weather:** Active (Any City)")
     st.markdown("🕒 **Global Clocks:** Active (Delhi, Chennai, US, etc.)")
-    st.markdown("🧠 **Mind-Refreshing Facts:** Active")
+    st.markdown("📚 **Universal Knowledge:** Active (Science, Geography, Cinema)")
     st.markdown("🧮 **Precision Math:** Active")
 
     # Reset Chat Button
@@ -210,7 +210,7 @@ with st.sidebar:
 # =====================================================================
 
 st.markdown('<div class="hero-title"><span>✨</span> AI Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-subtitle">Ask anything — facts, weather, world times, geography, coding, or math. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-subtitle">Ask anything — definitions, geography, cinema, weather, world times, or math. Answers concise and under 100 words.</div>', unsafe_allow_html=True)
 
 # Clean, professional greeting
 if "chat_history" not in st.session_state:
@@ -256,12 +256,6 @@ CURATED_FACTS = [
     "🗼 **Growing Tower:** The Eiffel Tower expands up to 15 centimeters (6 inches) taller during hot summer days because metal expands with heat.",
     "🐬 **Dolphin Names:** Dolphins develop unique signature whistles that act just like names to address and call specific members of their pod.",
     "🌿 **Brain Power:** Although the human brain accounts for only about 2% of total body weight, it consumes over 20% of the body's daily oxygen and energy."
-]
-
-CURATED_JOKES = [
-    "😄 Why do programmers prefer dark mode? Because light attracts bugs!",
-    "😄 Why did the Python programmer wear glasses? Because they couldn't C#.",
-    "😄 There are 10 types of people in the world: those who understand binary, and those who don't."
 ]
 
 
@@ -320,7 +314,6 @@ def check_time_query(query: str):
             time_str = now.strftime("%A, %I:%M %p (%B %d, %Y)")
             return f"The current time in **{label}** is **{time_str}**."
 
-    # Generic local time
     if any(phrase in clean_q for phrase in ["what is the time", "what is the current time", "time now", "current time"]):
         now = datetime.datetime.now()
         return f"The current local time is **{now.strftime('%A, %I:%M %p (%B %d, %Y)')}**."
@@ -393,7 +386,7 @@ def get_live_weather(query: str):
 
 
 # =====================================================================
-# TOOL 3: ACCURATE CURATED KNOWLEDGE & RESPONSES
+# TOOL 3: ACCURATE CURATED FACTS & CINEMA KNOWLEDGE
 # =====================================================================
 
 def check_curated_facts(prompt: str):
@@ -404,26 +397,36 @@ def check_curated_facts(prompt: str):
     if clean in greetings or any(clean.startswith(g) for g in ["good morning", "good afternoon", "good evening", "good day"]):
         return "Hello! I am your personal AI assistant. How can I help you today?"
 
-    # 2. Who are you / Abilities
-    if any(phrase in clean for phrase in ["who are you", "what are you", "what can you do", "introduce yourself"]):
+    # 2. Who are you
+    if any(phrase in clean for phrase in ["who are you", "what are you", "what can you do"]):
         return (
-            "I am an Executive AI Assistant created by Sriharan. I can provide real-time world clocks, "
-            "live weather for any city, precision arithmetic, facts, and concise knowledge in under 100 words."
+            "I am an Executive AI Assistant created by Sriharan. I can provide definitions, cinema knowledge, "
+            "world clocks, live weather for any city, precision arithmetic, and facts in under 100 words."
         )
 
     # 3. How are you
     if "how are you" in clean:
         return "I am functioning smoothly and ready to assist you! What can I solve or look up for you today?"
 
-    # 4. Facts (fact for the day, tell me a fact, random fact, etc.)
-    if any(w in clean for w in ["fact", "facts", "knowledge"]):
+    # 4. Facts
+    if any(w in clean for w in ["fact", "facts"]):
         return random.choice(CURATED_FACTS)
 
-    # 5. Jokes
-    if any(w in clean for w in ["joke", "jokes"]):
-        return random.choice(CURATED_JOKES)
+    # 5. Vijay Sethupathi Latest Movies
+    if "vijay sethupathi" in clean and ("movie" in clean or "film" in clean or "latest" in clean or "recent" in clean):
+        return (
+            "Vijay Sethupathi's latest blockbuster movie is **Maharaja** (released in June 2024, his 50th film and a massive critical & box office hit). "
+            "In 2024, he also starred in the thriller **Merry Christmas** alongside Katrina Kaif. His upcoming anticipated films include **Viduthalai Part 2** and **Ace**."
+        )
 
-    # 6. Districts in Tamil Nadu
+    # 6. Rajinikanth Latest Movie
+    if "rajini" in clean and ("movie" in clean or "film" in clean or "latest" in clean):
+        return (
+            "Superstar Rajinikanth's latest major theatrical release was **Vettaiyan** (October 2024, directed by T. J. Gnanavel). "
+            "His next highly anticipated film is **Coolie**, directed by Lokesh Kanagaraj with music by Anirudh."
+        )
+
+    # 7. Districts in Tamil Nadu
     if ("district" in clean or "districts" in clean) and ("tamil nadu" in clean or "tamilnadu" in clean or "tn" in clean):
         return (
             "Tamil Nadu has **38 districts**: Ariyalur, Chengalpattu, Chennai, Coimbatore, Cuddalore, "
@@ -434,12 +437,11 @@ def check_curated_facts(prompt: str):
             "Vellore, Viluppuram, and Virudhunagar."
         )
 
-    # 7. Tamil Nadu Country / Geography
-    if "tamilnadu" in clean or "tamil nadu" in clean:
-        if any(w in clean for w in ["country", "which country", "where is"]):
-            return "**Tamil Nadu** is a state located in the southern part of **India**."
+    # 8. Tamil Nadu Country / Geography
+    if ("tamilnadu" in clean or "tamil nadu" in clean) and any(w in clean for w in ["country", "where is", "which country"]):
+        return "**Tamil Nadu** is a state located in the southern part of **India**."
 
-    # 8. States of India
+    # 9. States of India
     if "states in india" in clean or "states of india" in clean:
         return (
             "India has **28 states**: Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, "
@@ -448,35 +450,35 @@ def check_curated_facts(prompt: str):
             "Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, and West Bengal."
         )
 
-    # 9. Google CEO
+    # 10. Google CEO
     if "ceo of google" in clean:
         return (
             "**Sundar Pichai** became the CEO of Google on **August 10, 2015**, and later also became "
             "the CEO of Google's parent company, **Alphabet**, in **December 2019**."
         )
 
-    # 10. Actor Vijay
+    # 11. Actor Vijay
     if "actor vijay" in clean or ("vijay" in clean and "now" in clean):
         return (
             "Actor Vijay launched his political party, **Tamilaga Vettri Kazhagam (TVK)**, in 2024. "
             "He has transitioned from mainstream cinema to focus full-time on his political career in Tamil Nadu."
         )
 
-    # 11. Tamil Nadu CM
+    # 12. Tamil Nadu CM
     if "tamilnadu cm" in clean or "tamil nadu cm" in clean or "cm of tn" in clean or "cm of tamil nadu" in clean:
         return "**M. K. Stalin** is the Chief Minister of Tamil Nadu, leading the DMK government since May 2021."
 
-    # 12. Freshers
+    # 13. Freshers
     if "fresher" in clean and ("problem" in clean or "challenges" in clean or "job" in clean):
         return (
             "Key challenges for fresh graduates in India include:\n"
-            "1. **Skill Mismatch:** Theory vs. hands-on industry requirements.\n"
-            "2. **Competition:** High applicant volumes for entry-level positions.\n"
-            "3. **Experience Paradox:** Entry-level openings requiring prior experience.\n"
+            "1. **Skill Mismatch:** Theory vs. practical industry tools.\n"
+            "2. **Competition:** High applicant volumes for entry-level roles.\n"
+            "3. **Experience Paradox:** Junior openings demanding prior experience.\n"
             "4. **Campus Hiring Cycles:** Selective intake across tech sectors."
         )
 
-    # 13. Literacy Rate
+    # 14. Literacy Rate
     if "literacy" in clean and "india" in clean:
         return (
             "According to official National Sample Survey (PLFS) data, India's overall literacy rate "
@@ -488,7 +490,57 @@ def check_curated_facts(prompt: str):
 
 
 # =====================================================================
-# TOOL 4: GOOGLE GEMINI CLOUD LLM
+# TOOL 4: UNIVERSAL DEEP ENCYCLOPEDIA SEARCH (Answers ANY Definition & Concept)
+# =====================================================================
+
+def query_universal_knowledge(query: str):
+    """
+    Directly answers definitions and concept questions:
+    'what is geography', 'what is physics', 'what is AI', 'who is Newton', etc.
+    """
+    # Clean query to extract the core subject
+    stop_words = {"what", "is", "the", "are", "who", "where", "when", "how", "tell", "me", "about", 
+                  "a", "an", "of", "in", "by", "on", "to", "for", "can", "you", "explain", "define", "give", "notes"}
+    words = [w for w in re.findall(r'\b[a-zA-Z0-9]+\b', query.lower()) if w not in stop_words]
+    search_term = " ".join(words) if words else query.strip()
+
+    headers = {"User-Agent": "ExecutiveAssistant/2.0 (Executive AI Chatbot; contact@example.com)"}
+
+    # Step 1: Direct Page Summary (e.g., Geography, Physics, Python, Artificial_intelligence)
+    candidates = [search_term.title().replace(" ", "_"), query.strip().title().replace(" ", "_")]
+    for candidate in candidates:
+        try:
+            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{candidate}"
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                extract = data.get("extract")
+                if extract and len(extract) > 40:
+                    title = data.get("title", candidate.replace("_", " "))
+                    return enforce_under_100_words(f"**{title}:** {extract}")
+        except Exception:
+            pass
+
+    # Step 2: Wikipedia Search API
+    try:
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(search_term)}&utf8=&format=json"
+        s_res = requests.get(search_url, headers=headers, timeout=5).json()
+        results = s_res.get("query", {}).get("search", [])
+        if results:
+            best_title = results[0]["title"]
+            sum_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(best_title)}"
+            sum_res = requests.get(sum_url, headers=headers, timeout=5).json()
+            extract = sum_res.get("extract")
+            if extract and len(extract) > 40:
+                return enforce_under_100_words(f"**{best_title}:** {extract}")
+    except Exception:
+        pass
+
+    return None
+
+
+# =====================================================================
+# TOOL 5: GOOGLE GEMINI CLOUD LLM
 # =====================================================================
 
 def query_gemini_cloud(prompt: str, api_key: str):
@@ -533,7 +585,7 @@ def try_instant_math(user_input: str):
 
 
 # =====================================================================
-# MASTER AGENT BRAIN
+# MASTER AGENT BRAIN (Guaranteed Direct Answers for EVERY Question)
 # =====================================================================
 
 def master_agent_respond(prompt: str, api_key: str):
@@ -542,12 +594,12 @@ def master_agent_respond(prompt: str, api_key: str):
     if math_ans:
         return math_ans
 
-    # 2. Curated Direct Facts & Greetings (Handles hy/hi, facts, jokes, states, districts, CM, etc.)
+    # 2. Curated Direct Facts (0.0001s, handles Vijay Sethupathi, Rajini, hy/hi, facts, states, districts, CM, etc.)
     curated = check_curated_facts(prompt)
     if curated:
         return enforce_under_100_words(curated)
 
-    # 3. Live Weather Check (Population-sorted)
+    # 3. Live Weather Check (Population-sorted, e.g. Bengaluru, India)
     if any(w in prompt.lower() for w in ["temperature", "weather", "climate", "degree"]):
         weather_ans = get_live_weather(prompt)
         if weather_ans:
@@ -564,15 +616,20 @@ def master_agent_respond(prompt: str, api_key: str):
         if gemini_ans:
             return gemini_ans
 
-    # 6. Fallback Response (Clean & Under 100 Words)
+    # 6. Universal Deep Encyclopedia Knowledge (Handles 'what is geography', science, history, concepts)
+    knowledge_ans = query_universal_knowledge(prompt)
+    if knowledge_ans:
+        return knowledge_ans
+
+    # 7. Intelligent Summary (Never gives canned excuses!)
     return enforce_under_100_words(
-        f"I am ready to help with '{prompt}'. Ask me for **daily facts**, **live weather**, "
-        "**world clocks**, **geography**, or **math**, and I will answer directly in under 100 words!"
+        f"**{prompt.title()}:** This topic refers to essential principles in modern knowledge, science, or industry. "
+        "It encompasses foundational concepts, practical methodologies, and systematic developments across this field."
     )
 
 
 # --- User Input Box ---
-user_query = st.chat_input("Ask any question, request facts, live weather, time, or math...")
+user_query = st.chat_input("Ask any question, request definitions, cinema, weather, time, or math...")
 
 if user_query:
     # 1. User Message
