@@ -196,7 +196,7 @@ with st.sidebar:
     }
 
     st.markdown("---")
-    st.markdown("⚡ **Engine:** Gemini 3.8 Flash (Official SDK)")
+    st.markdown("⚡ **Engine:** Google Gemini (Official Protocol)")
     st.markdown("🧮 **Precision Math:** Active (+, -, *, /, %, ^)")
 
     # Reset Chat Button
@@ -229,78 +229,65 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# BULLETPROOF ENGINE (Official Google GenAI SDK + REST Fallback)
+# CLEAN, STANDARD GEMINI API ENGINE (Zero Unknown Fields)
 # =====================================================================
 
-def query_gemini_instant(prompt: str, api_key: str, system_instruction: str):
+def query_gemini_clean(prompt: str, api_key: str, system_instruction: str):
     """
-    Ultra-reliable execution using the official Google GenAI SDK with REST fallback.
-    Configured with a 50-second buffer and thinkingLevel=LOW for quick answers.
+    Sends a 100% standard, clean JSON payload to Google's official Gemini endpoint.
+    Eliminates all custom/unknown parameters that cause schema validation errors.
     """
     clean_key = api_key.strip()
-    
-    # Strategy 1: Official Google GenAI SDK (Native for Gemini 3.8 Flash)
-    try:
-        from google import genai
-        from google.genai import types
-        client = genai.Client(
-            api_key=clean_key,
-            http_options=types.HttpOptions(timeout=50_000)
-        )
-        config = types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_level="LOW"),
-            system_instruction=system_instruction
-        )
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt,
-            config=config
-        )
-        if response.text:
-            return response.text
-    except Exception:
-        pass
-
-    # Strategy 2: Direct REST with proper x-goog-api-key header and top-level thinkingConfig
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": clean_key
     }
+    
+    # Clean, official Google REST Schema - only pure "contents"
     payload = {
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": f"Instruction: {system_instruction}\n\nQuestion: {prompt}"}]
+                "parts": [
+                    {
+                        "text": f"System Directive: {system_instruction}\n\nUser Question: {prompt}"
+                    }
+                ]
             }
-        ],
-        "thinkingConfig": {
-            "thinkingLevel": "LOW"
-        }
+        ]
     }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=50)
-        data = response.json()
-        
-        if response.status_code == 200 and "candidates" in data:
-            parts = data["candidates"][0].get("content", {}).get("parts", [])
-            if parts and "text" in parts[0]:
-                return parts[0]["text"]
-                
-        elif "error" in data:
-            error_code = data["error"].get("code", 0)
-            error_msg = data["error"].get("message", "Unexpected API response")
-            if error_code == 429 or "quota" in error_msg.lower():
-                return "⏳ **Rate Limit Notice:** Google free quota limit reached. Please wait 60 seconds and ask again, or create a fresh free key at [aistudio.google.com](https://aistudio.google.com)."
-            return f"⚠️ **API Notice:** {error_msg}"
+
+    # Model priority list: gemini-3.8-flash first, then gemini-1.5-flash fallback
+    models_to_try = ["gemini-3.8-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+    last_error = ""
+
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            data = response.json()
             
-        return "Could not generate an answer. Please try again."
-        
-    except requests.exceptions.Timeout:
-        return "⏳ Request timed out. Google's server took longer than 50 seconds to reply. Please check your network or try asking again."
-    except Exception as e:
-        return f"⚠️ Connection error: {str(e)}"
+            if response.status_code == 200 and "candidates" in data:
+                parts = data["candidates"][0].get("content", {}).get("parts", [])
+                if parts and "text" in parts[0]:
+                    return parts[0]["text"]
+            elif "error" in data:
+                err_msg = data["error"].get("message", "")
+                # If model not found (404), continue to next model in loop
+                if data["error"].get("code") == 404:
+                    last_error = err_msg
+                    continue
+                # If rate limit (429)
+                if data["error"].get("code") == 429 or "quota" in err_msg.lower():
+                    return "⏳ **Rate Limit Notice:** Google's temporary free-tier request limit was reached. Please wait 60 seconds and try again, or generate a fresh free key at [aistudio.google.com](https://aistudio.google.com)."
+                return f"⚠️ **API Notice:** {err_msg}"
+        except requests.exceptions.Timeout:
+            continue
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    return f"⚠️ Could not generate an answer: {last_error}"
 
 
 # --- Instant Local Math Evaluator (<0.0001s for all arithmetic & modulo) ---
@@ -336,7 +323,7 @@ if user_query:
                 final_answer = math_ans
             else:
                 with st.spinner("Thinking..."):
-                    final_answer = query_gemini_instant(
+                    final_answer = query_gemini_clean(
                         prompt=user_query,
                         api_key=api_key_input,
                         system_instruction=PERSONA_PROMPTS[persona]
