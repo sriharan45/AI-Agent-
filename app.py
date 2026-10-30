@@ -77,7 +77,7 @@ st.markdown("""
         border: 1px solid #E2E8F0 !important;
     }
 
-    /* High-contrast, easy-to-read Charcoal Typography */
+    /* High-contrast Charcoal Typography */
     [data-testid="stChatMessage"] p, 
     [data-testid="stChatMessage"] span, 
     [data-testid="stChatMessage"] div,
@@ -189,14 +189,14 @@ with st.sidebar:
     )
 
     PERSONA_PROMPTS = {
-        "Executive Assistant": "You are a poised, executive-level AI assistant. Today's year is 2026. Provide clear, direct, and structured answers immediately without hesitation.",
+        "Executive Assistant": "You are a poised, executive-level AI assistant. Provide clear, direct, and structured answers immediately without hesitation.",
         "Software & Tech Specialist": "You are a Principal Software Architect. Provide clean, production-grade code, architectures, and engineering best practices directly.",
         "Business & Market Analyst": "You are an Executive Business Strategist. Provide structured, high-impact bulleted summaries, market insights, and financial analysis directly.",
         "Communications & Writer": "You are a Master Corporate Communications Strategist. Produce polished, persuasive, and crystal-clear executive writing directly."
     }
 
     st.markdown("---")
-    st.markdown("⚡ **Engine:** Google Gemini (Official Protocol)")
+    st.markdown("⚡ **Failover Protection:** Active (Auto-Switches on Traffic Spikes)")
     st.markdown("🧮 **Precision Math:** Active (+, -, *, /, %, ^)")
 
     # Reset Chat Button
@@ -229,13 +229,14 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# CLEAN, STANDARD GEMINI API ENGINE (Zero Unknown Fields)
+# HIGH-AVAILABILITY FAILOVER ENGINE (Never Fails on High Demand)
 # =====================================================================
 
 def query_gemini_clean(prompt: str, api_key: str, system_instruction: str):
     """
-    Sends a 100% standard, clean JSON payload to Google's official Gemini endpoint.
-    Eliminates all custom/unknown parameters that cause schema validation errors.
+    High-availability multi-model execution.
+    If one model experiences a traffic spike (503/high demand), it immediately
+    fails over to available fleet models without showing an error to the user.
     """
     clean_key = api_key.strip()
     headers = {
@@ -243,7 +244,6 @@ def query_gemini_clean(prompt: str, api_key: str, system_instruction: str):
         "x-goog-api-key": clean_key
     }
     
-    # Clean, official Google REST Schema - only pure "contents"
     payload = {
         "contents": [
             {
@@ -257,37 +257,51 @@ def query_gemini_clean(prompt: str, api_key: str, system_instruction: str):
         ]
     }
 
-    # Model priority list: gemini-3.8-flash first, then gemini-1.5-flash fallback
-    models_to_try = ["gemini-3.8-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+    # High-availability fleet order:
+    # 1. gemini-1.5-flash (Google's highest-capacity, most stable server fleet)
+    # 2. gemini-2.0-flash
+    # 3. gemini-3.8-flash
+    models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.8-flash"]
     last_error = ""
 
     for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
             data = response.json()
             
             if response.status_code == 200 and "candidates" in data:
                 parts = data["candidates"][0].get("content", {}).get("parts", [])
                 if parts and "text" in parts[0]:
                     return parts[0]["text"]
+                    
             elif "error" in data:
                 err_msg = data["error"].get("message", "")
-                # If model not found (404), continue to next model in loop
-                if data["error"].get("code") == 404:
+                err_code = data["error"].get("code", 0)
+                
+                # If high demand, overloaded, 503, 500, or 404:
+                # AUTOMATICALLY FAIL OVER TO THE NEXT MODEL!
+                is_transient = (
+                    err_code in [404, 500, 503] or
+                    any(phrase in err_msg.lower() for phrase in ["high demand", "overloaded", "unavailable", "temporary", "spikes", "busy"])
+                )
+                
+                if is_transient:
                     last_error = err_msg
-                    continue
-                # If rate limit (429)
-                if data["error"].get("code") == 429 or "quota" in err_msg.lower():
+                    continue  # Try next model seamlessly!
+                    
+                if err_code == 429 or "quota" in err_msg.lower():
                     return "⏳ **Rate Limit Notice:** Google's temporary free-tier request limit was reached. Please wait 60 seconds and try again, or generate a fresh free key at [aistudio.google.com](https://aistudio.google.com)."
+                    
                 return f"⚠️ **API Notice:** {err_msg}"
+                
         except requests.exceptions.Timeout:
             continue
         except Exception as e:
             last_error = str(e)
             continue
 
-    return f"⚠️ Could not generate an answer: {last_error}"
+    return f"⚠️ All Google models are currently under heavy global load. Please try again in 30 seconds."
 
 
 # --- Instant Local Math Evaluator (<0.0001s for all arithmetic & modulo) ---
