@@ -142,7 +142,6 @@ st.markdown("""
         color: #94A3B8 !important;
     }
 
-    /* Clean Clutter */
     header {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
@@ -197,7 +196,7 @@ with st.sidebar:
     }
 
     st.markdown("---")
-    st.markdown("⚡ **Speed Mode:** Instant (thinkingLevel: LOW)")
+    st.markdown("⚡ **Engine:** Gemini 3.8 Flash (Official SDK)")
     st.markdown("🧮 **Precision Math:** Active (+, -, *, /, %, ^)")
 
     # Reset Chat Button
@@ -214,7 +213,7 @@ with st.sidebar:
 st.markdown('<div class="hero-title"><span>✨</span> AI Assistant</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-subtitle">Ask anything — general knowledge, corporate research, code, or mathematics.</div>', unsafe_allow_html=True)
 
-# Clean, professional greeting requested by user
+# Clean, professional greeting
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {
@@ -230,40 +229,58 @@ for msg in st.session_state.chat_history:
 
 
 # =====================================================================
-# ULTRA-FAST 1-SHOT ENGINE (Bypasses Thinking Delays for 1-2s Responses)
+# BULLETPROOF ENGINE (Official Google GenAI SDK + REST Fallback)
 # =====================================================================
 
 def query_gemini_instant(prompt: str, api_key: str, system_instruction: str):
     """
-    Direct, single-shot execution targeting gemini-3.8-flash with thinkingLevel=LOW.
-    Responds in 1 to 2 seconds without hanging or timeouts!
+    Ultra-reliable execution using the official Google GenAI SDK with REST fallback.
+    Configured with a 50-second buffer and thinkingLevel=LOW for quick answers.
     """
     clean_key = api_key.strip()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={clean_key}"
-    headers = {"Content-Type": "application/json"}
     
-    # Official Gemini 3.8 Flash payload with fast thinking mode
+    # Strategy 1: Official Google GenAI SDK (Native for Gemini 3.8 Flash)
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(
+            api_key=clean_key,
+            http_options=types.HttpOptions(timeout=50_000)
+        )
+        config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_level="LOW"),
+            system_instruction=system_instruction
+        )
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt,
+            config=config
+        )
+        if response.text:
+            return response.text
+    except Exception:
+        pass
+
+    # Strategy 2: Direct REST with proper x-goog-api-key header and top-level thinkingConfig
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": clean_key
+    }
     payload = {
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {
-                        "text": f"Instruction: {system_instruction}\n\nQuestion: {prompt}"
-                    }
-                ]
+                "parts": [{"text": f"Instruction: {system_instruction}\n\nQuestion: {prompt}"}]
             }
         ],
-        "generationConfig": {
-            "thinkingConfig": {
-                "thinkingLevel": "LOW"
-            }
+        "thinkingConfig": {
+            "thinkingLevel": "LOW"
         }
     }
     
     try:
-        # Fast, single request with a clean 20-second threshold
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response = requests.post(url, headers=headers, json=payload, timeout=50)
         data = response.json()
         
         if response.status_code == 200 and "candidates" in data:
@@ -281,7 +298,7 @@ def query_gemini_instant(prompt: str, api_key: str, system_instruction: str):
         return "Could not generate an answer. Please try again."
         
     except requests.exceptions.Timeout:
-        return "⏳ Request timed out. Please try asking again."
+        return "⏳ Request timed out. Google's server took longer than 50 seconds to reply. Please check your network or try asking again."
     except Exception as e:
         return f"⚠️ Connection error: {str(e)}"
 
@@ -289,11 +306,9 @@ def query_gemini_instant(prompt: str, api_key: str, system_instruction: str):
 # --- Instant Local Math Evaluator (<0.0001s for all arithmetic & modulo) ---
 def try_instant_math(user_input: str):
     cleaned = user_input.strip()
-    # Support +, -, *, /, %, (, ), numbers
     allowed = set("0123456789+-*/%(). ")
     if all(c in allowed for c in cleaned) and any(op in cleaned for op in "+-*/%"):
         try:
-            # Handle percentage notation like 7% of 100 or standard modulo
             ans = eval(cleaned)
             if isinstance(ans, float) and ans.is_integer():
                 ans = int(ans)
@@ -315,7 +330,6 @@ if user_query:
     # 2. Assistant Processing
     with st.chat_message("assistant", avatar="✨"):
         if api_key_input:
-            # Instant Math Check (0.0001s, handles +, -, *, /, %)
             math_ans = try_instant_math(user_query)
             if math_ans:
                 st.markdown(math_ans)
